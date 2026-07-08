@@ -20,6 +20,7 @@ class Portfolio(Base):
     starting_capital: Mapped[float] = mapped_column(Float)
     leverage: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | closed
+    exchange: Mapped[str] = mapped_column(String(16), default="NSE")  # NSE | SGX | LSE | NYSE - which market this session trades
     session_start: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     session_end: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -42,6 +43,9 @@ class Position(Base):
     closed_at: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     realized_pnl: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exchange: Mapped[str] = mapped_column(String(16), default="NSE")
+    currency: Mapped[str] = mapped_column(String(8), default="INR")  # local currency the position was priced in
+    fx_rate_to_inr: Mapped[float] = mapped_column(Float, default=1.0)  # rate at open time, for explainability
 
     portfolio: Mapped["Portfolio"] = relationship(back_populates="positions")
 
@@ -91,12 +95,16 @@ class Trade(Base):
     symbol: Mapped[str] = mapped_column(String(32))
     action: Mapped[str] = mapped_column(String(16))  # BUY | SELL
     quantity: Mapped[float] = mapped_column(Float)
-    price: Mapped[float] = mapped_column(Float)
+    price: Mapped[float] = mapped_column(Float)  # INR-equivalent price used for all ledger math
     gross_value: Mapped[float] = mapped_column(Float)
     total_costs: Mapped[float] = mapped_column(Float)
     cost_breakdown_json: Mapped[dict] = mapped_column(JSON, default=dict)
     net_cash_impact: Mapped[float] = mapped_column(Float)
     timestamp: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    exchange: Mapped[str] = mapped_column(String(16), default="NSE")
+    currency: Mapped[str] = mapped_column(String(8), default="INR")
+    price_local: Mapped[float] = mapped_column(Float, default=0.0)  # price in the exchange's own currency, for display
+    fx_rate_to_inr: Mapped[float] = mapped_column(Float, default=1.0)
 
     portfolio: Mapped["Portfolio"] = relationship(back_populates="trades")
     decision: Mapped["Decision"] = relationship(back_populates="trades")

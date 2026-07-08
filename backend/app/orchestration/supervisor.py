@@ -13,8 +13,10 @@ from app.agents.base import AnalysisContext, historical_context_summary
 from app.agents.debate_loop import run_debate
 from app.consensus import reliability_tracker
 from app.consensus.trust_weighted_consensus import ConsensusResult, compute_consensus
+from app.data import exchanges as exchange_registry
 from app.data import fundamentals as fundamentals_data
-from app.data import news_data
+from app.data import fx, news_data
+from app.data.exchanges import Exchange
 from app.data.market_data import MarketDataProvider
 from app.db.models import AgentVote as AgentVoteRow
 from app.db.models import Decision, Position
@@ -24,8 +26,6 @@ from app.reporting import alert_agent, audit_log, report_agent
 from app.trading import execution_engine
 
 logger = logging.getLogger("supervisor")
-
-BENCHMARK_SYMBOL = "^NSEI"  # Nifty 50 - used by the Risk Assessment Analyst for beta/correlation/regime risk
 
 
 def _print_decision_reasoning(symbol: str, consensus: ConsensusResult, reasoning_text: str, execution_result: dict) -> None:
@@ -70,7 +70,13 @@ def run_committee_for_symbol(
     symbol: str,
     watchlist: list[str],
     execute: bool = True,
+    exchange: Exchange | None = None,
 ) -> dict:
+    # Scheduled ticks always pass the currently-open Exchange explicitly (see
+    # session_runner.py). Stock Search analyzes ad-hoc symbols not necessarily
+    # in any watchlist, so infer the market from the symbol's own suffix.
+    exchange = exchange or exchange_registry.infer_exchange_from_symbol(symbol)
+
     bars = provider.get_recent_bars(symbol)
     peer_bars = {s: provider.get_recent_bars(s) for s in watchlist if s != symbol}
     peer_bars[symbol] = bars
@@ -80,7 +86,7 @@ def run_committee_for_symbol(
     except Exception:
         daily_bars = None
     try:
-        benchmark_bars = provider.get_daily_bars(BENCHMARK_SYMBOL)
+        benchmark_bars = provider.get_daily_bars(exchange.benchmark_symbol)
     except Exception:
         benchmark_bars = None
 
@@ -115,7 +121,14 @@ def run_committee_for_symbol(
     opp_vote = next((v for v in critic_votes if v.agent_name == "Opportunity Critic"), None)
     alternatives = opp_vote.metrics.get("alternatives", []) if opp_vote else []
 
-    price = provider.get_latest_price(symbol)
+    # Every price entering the pipeline from here on is INR-equivalent, converted
+    # once at the source - position sizing, portfolio cash/exposure, P&L, and the
+    # "Overall Return" stats all stay in one currency exactly as before, even
+    # when the underlying symbol trades in USD/GBP/SGD. price_local/fx_rate are
+    # kept alongside purely for explainability (see execution_engine.py).
+    price_local = provider.get_latest_price(symbol)
+    fx_rate_to_inr = fx.get_fx_rate(exchange.currency)
+    price = price_local * fx_rate_to_inr
     reasoning_text = report_agent.build_consensus_reasoning(symbol, consensus, all_votes, historical_context_summary(ctx))
 
     decision_row = Decision(
@@ -146,10 +159,11 @@ def run_committee_for_symbol(
         )
 
     if execute:
-        portfolio = execution_engine.get_active_portfolio(db)
+        portfolio = execution_engine.get_active_portfolio(db, exchange=exchange.code)
         execution_result = portfolio_manager.process_decision(
             db, portfolio, symbol, consensus.verdict, consensus.directional_confidence,
             risk_level, volatility, price, decision_row.id,
+            exchange=exchange.code, price_local=price_local, fx_rate_to_inr=fx_rate_to_inr,
         )
     else:
         # Preview mode (Stock Search): show what sizing/leverage WOULD be used against the
@@ -186,6 +200,10 @@ def run_committee_for_symbol(
     return {
         "symbol": symbol,
         "price": price,
+        "exchange": exchange.code,
+        "currency": exchange.currency,
+        "price_local": price_local,
+        "fx_rate_to_inr": fx_rate_to_inr,
         "verdict": consensus.verdict,
         "directional_confidence": consensus.directional_confidence,
         "consensus_reasoning": reasoning_text,

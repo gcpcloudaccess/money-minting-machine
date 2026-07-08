@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     tick_minutes: int = 10
     watchlist: str = "RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS,LT.NS,SBIN.NS,ITC.NS"
 
+    # In live mode, the session runner automatically trades whichever of NSE/SGX/LSE/NYSE
+    # is currently open (see app/data/exchanges.py) and rolls over to the next one as
+    # markets close - "replay" mode always demos a single exchange regardless of the
+    # clock, so this only selects which one for replay/demo purposes.
+    replay_exchange: str = "NSE"
+
     # Drives the Investment Planner's asset-allocation caps and profit/loss goals
     # (see agents/allocation_planner.py) - conservative | moderate | aggressive.
     risk_tolerance: str = "moderate"

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.agents import allocation_planner
 from app.config import get_settings
-from app.data import fundamentals
+from app.data import exchanges, fundamentals
 from app.db.models import Portfolio
 from app.portfolio import execution_advisor, position_sizing, scenario_analysis
 from app.trading import execution_engine
@@ -26,7 +26,13 @@ def process_decision(
     volatility: float | None,
     price: float,
     decision_id: int | None,
+    exchange: str = "NSE",
+    price_local: float | None = None,
+    fx_rate_to_inr: float = 1.0,
 ) -> dict:
+    """`price` is always INR-equivalent (converted once by the caller via
+    app/data/fx.py before this runs); `price_local`/`fx_rate_to_inr` are only
+    threaded through to execution_engine for explainability on the Trade row."""
     existing = execution_engine.get_open_position(db, portfolio, symbol)
     advice = execution_advisor.advise(verdict, directional_confidence_pct, risk_level)
 
@@ -84,7 +90,10 @@ def process_decision(
             return {"executed": False, "reason": sizing.get("reason", "Position sizing returned 0 shares."), "sizing": sizing, "advice": advice}
 
         scenario = scenario_analysis.stress_test(price, sizing["quantity"], "LONG", volatility)
-        trade = execution_engine.open_position(db, portfolio, symbol, "LONG", sizing["quantity"], price, decision_id)
+        trade = execution_engine.open_position(
+            db, portfolio, symbol, "LONG", sizing["quantity"], price, decision_id,
+            exchange=exchange, currency=exchanges.get_exchange(exchange).currency, price_local=price_local, fx_rate_to_inr=fx_rate_to_inr,
+        )
         action = "OPEN_LONG" if verdict == "BUY" else "OPEN_LONG_FROM_SWITCH"
         return {"executed": True, "action": action, "trade_id": trade.id, "sizing": sizing, "scenario": scenario, "advice": advice}
 
@@ -93,7 +102,7 @@ def process_decision(
             return {"executed": False, "reason": f"No open {symbol} position to exit; short-selling not enabled in this build.", "advice": advice}
 
         scenario = scenario_analysis.stress_test(existing.avg_price, existing.quantity, existing.side, volatility)
-        trade = execution_engine.close_position(db, portfolio, existing, price, decision_id)
+        trade = execution_engine.close_position(db, portfolio, existing, price, decision_id, price_local=price_local, fx_rate_to_inr=fx_rate_to_inr)
         return {"executed": True, "action": "CLOSE_LONG", "trade_id": trade.id, "realized_pnl": existing.realized_pnl, "scenario": scenario, "advice": advice}
 
     return {"executed": False, "reason": f"Unrecognized verdict {verdict}.", "advice": advice}
