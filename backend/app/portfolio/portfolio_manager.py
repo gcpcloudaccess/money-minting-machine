@@ -30,7 +30,12 @@ def process_decision(
     if verdict in ("HOLD", "WAIT"):
         return {"executed": False, "reason": f"Consensus verdict is {verdict}; no action taken.", "advice": advice}
 
-    if verdict == "BUY":
+    # SWITCH with no current holding in this symbol has nothing to switch *out of* - the
+    # Opportunity Critic's signal ("a better alternative exists") only makes sense relative
+    # to an existing position. Without one, the committee still found enough directional
+    # conviction to clear the decisive threshold, so treat it as a BUY on this symbol rather
+    # than silently no-op'ing a verdict the rest of the system already committed to.
+    if verdict == "BUY" or (verdict == "SWITCH" and existing is None):
         if existing is not None:
             return {"executed": False, "reason": f"Already long {symbol}; no additional entry this tick.", "advice": advice}
 
@@ -41,7 +46,8 @@ def process_decision(
 
         scenario = scenario_analysis.stress_test(price, sizing["quantity"], "LONG", volatility)
         trade = execution_engine.open_position(db, portfolio, symbol, "LONG", sizing["quantity"], price, decision_id)
-        return {"executed": True, "action": "OPEN_LONG", "trade_id": trade.id, "sizing": sizing, "scenario": scenario, "advice": advice}
+        action = "OPEN_LONG" if verdict == "BUY" else "OPEN_LONG_FROM_SWITCH"
+        return {"executed": True, "action": action, "trade_id": trade.id, "sizing": sizing, "scenario": scenario, "advice": advice}
 
     if verdict in ("SELL", "SWITCH"):
         if existing is None:

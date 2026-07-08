@@ -6,6 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.db.models import Base, Portfolio
+from app.portfolio import portfolio_manager
 from app.trading import execution_engine
 from app.trading.costs import compute_costs
 
@@ -52,6 +53,42 @@ def test_open_and_close_position_updates_cash(db):
     assert position.realized_pnl is not None
     # profitable move (1000 -> 1050) minus costs should still be net positive
     assert position.realized_pnl > 0
+
+
+def test_switch_verdict_without_existing_position_opens_long(db):
+    """SWITCH means "prefer a different stock" relative to an existing holding -
+    with no current position in this symbol, that has nothing to switch out of,
+    so it should resolve to a real BUY rather than silently no-op'ing a verdict
+    the consensus engine already committed to."""
+    portfolio = Portfolio(cash_inr=10000.0, starting_capital=10000.0, leverage=2.0, status="active")
+    db.add(portfolio)
+    db.commit()
+    db.refresh(portfolio)
+
+    result = portfolio_manager.process_decision(
+        db, portfolio, "RELIANCE.NS", verdict="SWITCH", directional_confidence_pct=25.0,
+        risk_level="MEDIUM", volatility=0.01, price=1000.0, decision_id=None,
+    )
+    assert result["executed"] is True
+    assert result["action"] == "OPEN_LONG_FROM_SWITCH"
+    position = execution_engine.get_open_position(db, portfolio, "RELIANCE.NS")
+    assert position is not None
+
+
+def test_switch_verdict_with_existing_position_closes_it(db):
+    portfolio = Portfolio(cash_inr=10000.0, starting_capital=10000.0, leverage=2.0, status="active")
+    db.add(portfolio)
+    db.commit()
+    db.refresh(portfolio)
+    execution_engine.open_position(db, portfolio, "RELIANCE.NS", "LONG", 5, 1000.0, decision_id=None)
+
+    result = portfolio_manager.process_decision(
+        db, portfolio, "RELIANCE.NS", verdict="SWITCH", directional_confidence_pct=25.0,
+        risk_level="MEDIUM", volatility=0.01, price=1010.0, decision_id=None,
+    )
+    assert result["executed"] is True
+    assert result["action"] == "CLOSE_LONG"
+    assert execution_engine.get_open_position(db, portfolio, "RELIANCE.NS") is None
 
 
 def test_force_close_all(db):
