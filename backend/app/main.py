@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from app.agents import allocation_planner
 from app.config import get_settings
 from app.data import fundamentals as fundamentals_data
+from app.data import market_data
 from app.data.market_data import MarketDataProvider
 from app.db.models import AgentVote, AuditLog, Decision, Portfolio, Position, Trade
 from app.db.session import get_db, init_db
@@ -85,12 +86,24 @@ def _decision_dict(d: Decision, db: Session) -> dict:
 
 
 # ---------------------------------------------------------------- portfolio / dashboard
-@app.get("/portfolio")
-def get_portfolio(db: Session = Depends(get_db)) -> dict:
-    portfolio = execution_engine.get_active_portfolio(db)
-    positions = db.query(Position).filter_by(portfolio_id=portfolio.id, status="open").all()
+def _ist_date(ts: dt.datetime | None) -> dt.date | None:
+    """SQLite drops tzinfo on round-trip even for DateTime(timezone=True) columns,
+    so timestamps come back naive despite being written via utcnow() (which IS
+    timezone-aware). Treat a naive value as UTC before converting to IST, or
+    date comparisons silently use the server's local timezone instead."""
+    if ts is None:
+        return None
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=dt.timezone.utc)
+    return ts.astimezone(market_data.IST).date()
 
-    # Long-only build: mark-to-market value of an open position is simply current price x quantity.
+
+def _portfolio_total_value(db: Session, portfolio: Portfolio) -> float:
+    """Mark-to-market total value of the ACTIVE portfolio (long-only: value of an
+    open position is simply current price x quantity). Closed portfolios have no
+    open positions after force-close, so their value is just cash_inr - use that
+    directly rather than calling this helper for a closed portfolio."""
+    positions = db.query(Position).filter_by(portfolio_id=portfolio.id, status="open").all()
     mtm_value = 0.0
     for p in positions:
         try:
@@ -98,8 +111,16 @@ def get_portfolio(db: Session = Depends(get_db)) -> dict:
         except Exception:
             price = p.avg_price
         mtm_value += price * p.quantity
+    return portfolio.cash_inr + mtm_value
 
-    total_value = portfolio.cash_inr + mtm_value
+
+@app.get("/portfolio")
+def get_portfolio(db: Session = Depends(get_db)) -> dict:
+    portfolio = execution_engine.get_active_portfolio(db)
+    positions = db.query(Position).filter_by(portfolio_id=portfolio.id, status="open").all()
+
+    total_value = _portfolio_total_value(db, portfolio)
+    mtm_value = total_value - portfolio.cash_inr
     net_profit = total_value - portfolio.starting_capital
 
     # "Overall" aggregates every session (portfolio row) this app has ever run, not just
@@ -120,6 +141,11 @@ def get_portfolio(db: Session = Depends(get_db)) -> dict:
     overall_net_profit = overall_ending_value - overall_starting_capital
     overall_return_pct = round((overall_net_profit / overall_starting_capital) * 100, 2) if overall_starting_capital else 0.0
 
+    closed_positions = db.query(Position).filter_by(portfolio_id=portfolio.id, status="closed").all()
+    closed_count = len(closed_positions)
+    winning_count = sum(1 for p in closed_positions if (p.realized_pnl or 0) > 0)
+    win_rate_pct = round(winning_count / closed_count * 100, 1) if closed_count else 0.0
+
     return {
         "portfolio_id": portfolio.id,
         "status": portfolio.status,
@@ -134,6 +160,9 @@ def get_portfolio(db: Session = Depends(get_db)) -> dict:
         "positions": [_position_dict(p) for p in positions],
         "session_start": portfolio.session_start.isoformat() if portfolio.session_start else None,
         "session_end": portfolio.session_end.isoformat() if portfolio.session_end else None,
+        "closed_trades_count": closed_count,
+        "winning_trades_count": winning_count,
+        "win_rate_pct": win_rate_pct,
         "overall": {
             "total_sessions": len(all_portfolios),
             "closed_sessions": closed_sessions,
@@ -280,12 +309,27 @@ def get_settings_view() -> dict:
 def get_allocation_plan(db: Session = Depends(get_db)) -> dict:
     """Investment Planner Agent: current session's asset-allocation caps
     (per-symbol, per-sector) and profit/loss goals, plus live progress toward
-    those goals for the active portfolio."""
+    those goals for the trading day so far."""
     portfolio = execution_engine.get_active_portfolio(db)
     plan = allocation_planner.build_plan(settings.risk_tolerance, portfolio.starting_capital, portfolio.leverage * portfolio.starting_capital)
 
-    open_exposure = execution_engine.get_open_exposure(db, portfolio)
-    running_pnl_estimate = round(portfolio.cash_inr + open_exposure - portfolio.starting_capital, 2)
+    # "Today's P&L" must span every session that started today, not just the currently
+    # active one - a session force-closes at market close and a fresh one auto-opens the
+    # moment any endpoint is next called, so a single trading day can span 2+ Portfolio
+    # rows. Summing only the active session's P&L silently drops any loss/profit already
+    # realized earlier today in a session that has since closed and been replaced.
+    today_ist = dt.datetime.now(market_data.IST).date()
+    running_pnl_estimate = 0.0
+    for p in db.query(Portfolio).all():
+        session_date = _ist_date(p.session_start)
+        if session_date != today_ist:
+            continue
+        if p.id == portfolio.id:
+            ending_value = _portfolio_total_value(db, portfolio)
+        else:
+            ending_value = p.cash_inr  # closed sessions hold 0 open positions after force-close
+        running_pnl_estimate += ending_value - p.starting_capital
+    running_pnl_estimate = round(running_pnl_estimate, 2)
 
     sector_exposure: dict[str, float] = {}
     for p in execution_engine.get_open_positions(db, portfolio):
