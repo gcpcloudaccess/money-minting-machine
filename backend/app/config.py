@@ -1,0 +1,55 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    llm_provider: str = "anthropic"
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-5"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
+
+    newsapi_key: str = ""
+
+    data_mode: str = "replay"  # live | replay
+
+    database_url: str = "sqlite:///./investment_committee.db"
+
+    starting_capital_inr: float = 10_000.0
+    leverage: float = 2.0
+    session_hours: float = 4.0
+    tick_minutes: int = 10
+    watchlist: str = "RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS,LT.NS,SBIN.NS,ITC.NS"
+
+    backend_host: str = "127.0.0.1"
+    backend_port: int = 8000
+
+    # Caps concurrent LLM calls when running agents in parallel. Keep conservative -
+    # most API tiers rate-limit on concurrent/burst requests, and firing all 8+
+    # analysts at once can trigger retries that cost more time than sequential
+    # execution would have. Raise this if your API tier comfortably supports it.
+    max_parallel_agents: int = 4
+
+    @property
+    def watchlist_symbols(self) -> list[str]:
+        return [s.strip() for s in self.watchlist.split(",") if s.strip()]
+
+    @property
+    def max_exposure_inr(self) -> float:
+        return self.starting_capital_inr * self.leverage
+
+    @property
+    def llm_key_configured(self) -> bool:
+        if self.llm_provider == "anthropic":
+            return bool(self.anthropic_api_key)
+        if self.llm_provider == "openai":
+            return bool(self.openai_api_key)
+        return False
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

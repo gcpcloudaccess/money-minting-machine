@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+backend/.env
+frontend/.env
+backend/*.db
+data_cache/
+reports/
+.pytest_cache/
+.streamlit/
