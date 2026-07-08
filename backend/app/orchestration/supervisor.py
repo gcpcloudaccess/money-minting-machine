@@ -172,6 +172,7 @@ def run_committee_for_symbol(
         preview_open_exposure = execution_engine.get_open_exposure(db, preview_portfolio)
         sizing_preview = position_sizing.size_position(
             consensus.directional_confidence, risk_level, price, preview_open_exposure, preview_portfolio.cash_inr,
+            allow_fractional=(exchange.code != "NSE"),
         )
         preview_qty = sizing_preview["quantity"] or max(int(1000 / price), 1) if price else 1
         execution_result = {

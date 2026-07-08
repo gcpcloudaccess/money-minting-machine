@@ -99,6 +99,39 @@ def test_sector_cap_blocks_new_position_when_exhausted():
     assert "sector" in result["reason"].lower()
 
 
+def test_expensive_foreign_share_gets_zero_quantity_without_fractional_shares():
+    """The actual bug report: AAPL at ~Rs28,000/share (FX-converted) is worth
+    more than the entire Rs7,000 per-symbol cap - without fractional shares,
+    this permanently rounds down to 0 and the trade never executes, even
+    though the committee cleared the decisive threshold with a real BUY."""
+    result = position_sizing.size_position(
+        directional_confidence_pct=19.0, risk_level="MEDIUM", price=28_153.0,
+        current_open_exposure=0.0, cash_available=10_000.0,
+        symbol_cap_inr=7_000.0, sector_cap_inr=10_000.0,
+    )
+    assert result["quantity"] == 0
+
+
+def test_allow_fractional_lets_the_same_expensive_share_actually_execute():
+    result = position_sizing.size_position(
+        directional_confidence_pct=19.0, risk_level="MEDIUM", price=28_153.0,
+        current_open_exposure=0.0, cash_available=10_000.0,
+        symbol_cap_inr=7_000.0, sector_cap_inr=10_000.0, allow_fractional=True,
+    )
+    assert result["quantity"] > 0
+    assert result["quantity"] < 1  # a fraction of a share, not a whole one
+    assert result["notional"] > 0.0
+
+
+def test_fractional_quantity_respects_symbol_cap():
+    result = position_sizing.size_position(
+        directional_confidence_pct=30.0, risk_level="LOW", price=28_153.0,
+        current_open_exposure=0.0, cash_available=10_000.0,
+        symbol_cap_inr=7_000.0, allow_fractional=True,
+    )
+    assert result["notional"] <= 7_000.0 + 1.0  # rounding slack
+
+
 def test_symbol_cap_limits_notional_without_blocking_entirely():
     """A partially-used symbol cap should shrink the trade, not zero it out or get
     ignored in favor of the (larger) portfolio-wide exposure budget."""

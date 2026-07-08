@@ -35,7 +35,15 @@ def size_position(
     current_symbol_exposure: float = 0.0,
     sector_cap_inr: float | None = None,
     current_sector_exposure: float = 0.0,
+    allow_fractional: bool = False,
 ) -> dict:
+    """allow_fractional=True (foreign exchanges only - see portfolio_manager.py)
+    permits a fractional share count, same as real fractional-share brokers
+    (Robinhood, Zerodha's US-stock partners, etc). Without it, a single share
+    priced above the per-symbol/sector allocation cap rounds down to a
+    permanent 0 - a real problem once FX-converted US mega-cap prices (AAPL
+    ~Rs28,000/share) are compared against a Rs10,000 capital base, not just a
+    rare edge case. NSE stays whole-share-only, matching real Indian brokers."""
     settings = get_settings()
     max_leverage = settings.leverage  # hard ceiling, e.g. 2.0 for 1:2
     max_exposure = settings.max_exposure_inr  # starting_capital * max_leverage, portfolio-wide ceiling
@@ -89,7 +97,7 @@ def size_position(
     deploy_fraction = 0.5 + 0.4 * confidence_fraction * risk_multiplier
     target_notional = buying_power * deploy_fraction
 
-    quantity = int(target_notional // price)
+    quantity = round(target_notional / price, 4) if allow_fractional else int(target_notional // price)
     notional = round(quantity * price, 2)
     margin_used_inr = round(max(0.0, notional - cash_available), 2)
 

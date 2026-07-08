@@ -84,7 +84,7 @@ def process_decision(
         sizing = position_sizing.size_position(
             directional_confidence_pct, risk_level, price, open_exposure, portfolio.cash_inr,
             symbol_cap_inr=plan.symbol_cap_inr, sector_cap_inr=plan.sector_cap_inr,
-            current_sector_exposure=sector_exposure,
+            current_sector_exposure=sector_exposure, allow_fractional=(exchange != "NSE"),
         )
         if sizing["quantity"] <= 0:
             return {"executed": False, "reason": sizing.get("reason", "Position sizing returned 0 shares."), "sizing": sizing, "advice": advice}
