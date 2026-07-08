@@ -51,52 +51,25 @@ f4.markdown(
 )
 
 st.write("")
-th_col, pg_col, pdf_col = st.columns(3)
-with th_col:
-    st.markdown('<div class="ic-metric-label" style="margin-bottom:0.4rem;">🕒 TRADE HISTORY</div>', unsafe_allow_html=True)
-    trades = get("/trades") or []
-    recent_trades = list(reversed(trades))[-6:]  # chronological, most recent 6
-    if recent_trades:
-        rows_html = ""
-        for t in recent_trades:
-            action_color = "#4ADE80" if t["action"] == "BUY" else "#F87171"
-            time_str = t["timestamp"][11:16] if t["timestamp"] else "--:--"
-            rows_html += (
-                f'<div style="display:flex; justify-content:space-between; padding:0.25rem 0; '
-                f'border-bottom:1px solid #1E293B; font-family:\'SF Mono\',\'Roboto Mono\',monospace; font-size:0.85rem;">'
-                f'<span style="color:#64748B;">{time_str}</span>'
-                f'<span style="color:{action_color}; font-weight:700;">{t["action"]}</span>'
-                f'<span style="color:#F1F5F9;">{t["symbol"]}</span>'
-                f"</div>"
-            )
-        st.markdown(f'<div class="ic-card" style="padding:0.7rem 1rem;">{rows_html}</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="ic-card">No trades yet this session.</div>', unsafe_allow_html=True)
-
-with pg_col:
-    st.markdown('<div class="ic-metric-label" style="margin-bottom:0.4rem;">📊 PORTFOLIO GROWTH CURVE</div>', unsafe_allow_html=True)
-    eq_mini = get("/portfolio/equity-curve")
-    if eq_mini["figure"]["data"]:
-        mini_fig = go.Figure(eq_mini["figure"])
-        mini_fig.update_layout(height=220, showlegend=False, title=None, margin={"t": 10, "b": 10, "l": 10, "r": 10})
-        st.plotly_chart(mini_fig, width="stretch", config={"displayModeBar": False})
-    else:
-        st.markdown('<div class="ic-card">No trades yet — curve populates once trades execute.</div>', unsafe_allow_html=True)
-
-with pdf_col:
-    st.markdown('<div class="ic-metric-label" style="margin-bottom:0.4rem;">📄 COMPLETE EXPLAINABLE TRADE LOG</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="ic-card" style="text-align:center; padding:1.4rem 1rem;">Full session summary, every trade, and the complete reasoning behind every decision.</div>',
-        unsafe_allow_html=True,
-    )
-    if st.button("📄 Generate PDF", width="stretch"):
-        with st.spinner("Generating PDF..."):
-            result = post("/reports/generate")
-        st.session_state["dashboard_report_path"] = result["report_path"]
-    last_path = st.session_state.get("dashboard_report_path")
-    if last_path and Path(last_path).exists():
-        with open(last_path, "rb") as f:
-            st.download_button("⬇️ Download PDF", f, file_name=Path(last_path).name, mime="application/pdf", width="stretch")
+st.markdown('<div class="ic-metric-label" style="margin-bottom:0.4rem;">🕒 TRADE HISTORY</div>', unsafe_allow_html=True)
+trades = get("/trades") or []
+recent_trades = list(reversed(trades))[-6:]  # chronological, most recent 6
+if recent_trades:
+    rows_html = ""
+    for t in recent_trades:
+        action_color = "#4ADE80" if t["action"] == "BUY" else "#F87171"
+        time_str = t["timestamp"][11:16] if t["timestamp"] else "--:--"
+        rows_html += (
+            f'<div style="display:flex; justify-content:space-between; padding:0.25rem 0.2rem; '
+            f'border-bottom:1px solid #1E293B; font-family:\'SF Mono\',\'Roboto Mono\',monospace; font-size:0.85rem;">'
+            f'<span style="color:#64748B;">{time_str}</span>'
+            f'<span style="color:{action_color}; font-weight:700;">{t["action"]}</span>'
+            f'<span style="color:#F1F5F9;">{t["symbol"]}</span>'
+            f"</div>"
+        )
+    st.markdown(f'<div class="ic-card" style="padding:0.7rem 1rem;">{rows_html}</div>', unsafe_allow_html=True)
+else:
+    st.markdown('<div class="ic-card">No trades yet this session.</div>', unsafe_allow_html=True)
 
 st.markdown('<hr class="ic-divider">', unsafe_allow_html=True)
 
@@ -150,7 +123,7 @@ else:
 st.write("")
 chart_col, price_col = st.columns([3, 2])
 with chart_col:
-    st.subheader("Portfolio Growth Curve (Full Detail)")
+    st.subheader("Portfolio Growth Curve")
     eq = get("/portfolio/equity-curve")
     if eq["figure"]["data"]:
         fig = go.Figure(eq["figure"])
@@ -191,6 +164,21 @@ if portfolio["positions"]:
         )
 else:
     st.info("No open positions.")
+
+st.markdown('<hr class="ic-divider">', unsafe_allow_html=True)
+st.subheader("📄 Complete Explainable Trade Log")
+st.write("Full session summary, every trade, and the complete reasoning behind every decision.")
+pdf_c1, pdf_c2 = st.columns(2)
+with pdf_c1:
+    if st.button("📄 Generate PDF", width="stretch"):
+        with st.spinner("Generating PDF..."):
+            result = post("/reports/generate")
+        st.session_state["dashboard_report_path"] = result["report_path"]
+with pdf_c2:
+    last_path = st.session_state.get("dashboard_report_path")
+    if last_path and Path(last_path).exists():
+        with open(last_path, "rb") as f:
+            st.download_button("⬇️ Download PDF", f, file_name=Path(last_path).name, mime="application/pdf", width="stretch")
 
 st.markdown('<hr class="ic-divider">', unsafe_allow_html=True)
 if st.button("🛑 Force Close Session Now (square off all positions + generate PDF)"):
