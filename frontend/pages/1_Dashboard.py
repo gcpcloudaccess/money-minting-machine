@@ -10,7 +10,9 @@ st.set_page_config(page_title="Dashboard", page_icon="📊", layout="wide")
 inject_base_css()
 page_header("📊", "Dashboard", "Live portfolio state for the active paper-trading session")
 
-col_a, col_b, col_c = st.columns([1, 1, 4])
+tick_status = get("/session/tick-status")
+
+col_a, col_b, col_c, col_d = st.columns([1, 1, 1.3, 3.7])
 with col_a:
     if st.button("Refresh", width="stretch"):
         st.rerun()
@@ -20,6 +22,22 @@ with col_b:
             post("/session/tick")
         st.success("Tick complete.")
         st.rerun()
+with col_d:
+    if tick_status["paused"]:
+        if st.button("▶ Resume Auto-Trading", width="stretch", type="primary"):
+            post("/session/resume")
+            st.success("Auto-trading resumed.")
+            st.rerun()
+    else:
+        if st.button("⏸ Stop Auto-Trading (saves LLM tokens)", width="stretch"):
+            post("/session/pause")
+            st.success("Auto-trading paused — no more scheduled ticks (Run Tick Now still works for a one-off check).")
+            st.rerun()
+
+if tick_status["paused"]:
+    st.info("Automatic ticking is **paused** — the committee will not run on its own. Use \"Run Tick Now\" for a one-off analysis, or Resume to restart the schedule.")
+else:
+    st.caption(f"Auto-ticking every {tick_status['tick_minutes']} min.")
 
 portfolio = get("/portfolio")
 overall = portfolio["overall"]

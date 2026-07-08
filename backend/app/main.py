@@ -302,6 +302,32 @@ def close_session() -> dict:
     return {"status": "session closed"}
 
 
+@app.post("/session/pause")
+def pause_ticking() -> dict:
+    """Pauses the automatic scheduled tick (the source of nearly all LLM/token
+    usage) without touching open positions or the active session - "Run Tick
+    Now" still works for a deliberate one-off analysis while paused."""
+    _scheduler.pause_job("session_tick")
+    return {"status": "paused"}
+
+
+@app.post("/session/resume")
+def resume_ticking() -> dict:
+    _scheduler.resume_job("session_tick")
+    return {"status": "resumed"}
+
+
+@app.get("/session/tick-status")
+def tick_status() -> dict:
+    job = _scheduler.get_job("session_tick")
+    paused = job is None or job.next_run_time is None
+    return {
+        "paused": paused,
+        "tick_minutes": settings.tick_minutes,
+        "next_run_time": job.next_run_time.isoformat() if job and job.next_run_time else None,
+    }
+
+
 @app.get("/settings")
 def get_settings_view() -> dict:
     # Real-world check, independent of data_mode - this answers "which exchange
