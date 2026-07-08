@@ -149,7 +149,7 @@ with tab_positions:
 
     with chart_col:
         st.subheader("Stock Chart")
-        watchlist = get("/settings")["watchlist"]
+        watchlist = app_settings["watchlist"]
         held_symbols = [p["symbol"] for p in portfolio["positions"]]
         default_symbol = held_symbols[0] if held_symbols else (watchlist[0] if watchlist else "RELIANCE.NS")
         chart_options = list(dict.fromkeys([*held_symbols, *watchlist]))
