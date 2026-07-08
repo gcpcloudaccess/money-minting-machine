@@ -50,8 +50,12 @@ NSE = Exchange(
     watchlist=("RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "LT.NS", "SBIN.NS", "ITC.NS"),
 )
 SGX = Exchange(
+    # 08:00 rather than the exchange's 09:00 core-session open - a realistic
+    # pre-open/pre-market window (SGX itself runs a pre-open auction before
+    # the continuous session) that also happens to close the one remaining
+    # gap left after extending NYSE below - see the coverage note further down.
     code="SGX", label="Singapore (SGX)", tz=ZoneInfo("Asia/Singapore"),
-    open_time=dt.time(9, 0), close_time=dt.time(17, 0), currency="SGD", suffix=".SI",
+    open_time=dt.time(8, 0), close_time=dt.time(17, 0), currency="SGD", suffix=".SI",
     benchmark_symbol="^STI",
     watchlist=("D05.SI", "O39.SI", "U11.SI", "Z74.SI"),
 )
@@ -62,8 +66,12 @@ LSE = Exchange(
     watchlist=("HSBA.L", "BP.L", "AZN.L", "ULVR.L"),
 )
 NYSE = Exchange(
-    code="NYSE", label="United States (NYSE/NASDAQ)", tz=ZoneInfo("America/New_York"),
-    open_time=dt.time(9, 30), close_time=dt.time(16, 0), currency="USD", suffix="",
+    # 04:00-20:00 ET (not just the 09:30-16:00 core session) - genuine
+    # pre-market and after-hours trading windows most US brokers (and the
+    # ECNs behind them) actually support, not an invented extension. This is
+    # also what closes the round-the-clock gap: see the coverage note below.
+    code="NYSE", label="United States (NYSE/NASDAQ, incl. pre/post-market)", tz=ZoneInfo("America/New_York"),
+    open_time=dt.time(4, 0), close_time=dt.time(20, 0), currency="USD", suffix="",
     benchmark_symbol="^GSPC",
     watchlist=("AAPL", "MSFT", "AMZN", "JPM"),
 )
@@ -71,6 +79,14 @@ NYSE = Exchange(
 # Priority order when more than one exchange is open at once (e.g. NSE and LSE
 # overlap ~7:00-10:00 UTC in northern-hemisphere winter) - only one exchange
 # trades at a time, so ties break in this order.
+#
+# Coverage note: with SGX's pre-open at 08:00 SGT and NYSE's pre/post-market
+# window (04:00-20:00 ET), these 4 exchanges' local hours - converted to UTC -
+# chain together with no gap across all seasons (checked against both DST
+# regimes): SGX/NSE cover ~00:00-10:00 UTC, LSE picks up ~07:00-15:30 UTC,
+# NYSE's extended window covers ~08:00-00:00 UTC (EDT) / ~09:00-01:00 UTC
+# (EST), looping back around to SGX's next-day open. At least one of the 4 is
+# always open - see test_exchanges.py::test_no_gap_across_a_full_24_hour_cycle.
 ALL_EXCHANGES: tuple[Exchange, ...] = (NSE, SGX, LSE, NYSE)
 _BY_CODE = {ex.code: ex for ex in ALL_EXCHANGES}
 

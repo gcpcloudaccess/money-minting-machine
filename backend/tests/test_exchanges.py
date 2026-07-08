@@ -27,20 +27,28 @@ def test_nse_closed_before_open_and_after_close():
 
 
 def test_nyse_open_during_its_own_hours():
-    # 14:00 ET is after LSE's 16:30 BST close (15:30 UTC) but still within NYSE
-    # hours, so this time genuinely has only NYSE open (11:00 ET would also
-    # have LSE open - London/NY hours overlap for a few hours each day).
-    t = dt.datetime(2026, 7, 8, 14, 0, tzinfo=ZoneInfo("America/New_York"))  # Wednesday
+    # 18:00 ET is after LSE's 16:30 BST close (15:30 UTC = 11:30 ET) but still
+    # within NYSE's extended (pre/post-market) window, so this time genuinely
+    # has only NYSE open (11:00 ET would also have LSE open - London/NY hours
+    # overlap for a few hours each day).
+    t = dt.datetime(2026, 7, 8, 18, 0, tzinfo=ZoneInfo("America/New_York"))  # Wednesday
     assert ex.NYSE.is_open(t)
     assert not ex.LSE.is_open(t)
     assert ex.get_open_exchange(t).code == "NYSE"
 
 
-def test_all_exchanges_closed_in_the_daily_dead_zone():
-    # ~22:00 UTC: US closed for the day (16:00 ET close = ~20:00-21:00 UTC depending on
-    # DST), NSE not open until 03:45 UTC the next day.
-    t = dt.datetime(2026, 7, 8, 22, 0, tzinfo=dt.timezone.utc)
-    assert ex.get_open_exchange(t) is None
+def test_no_gap_across_a_full_24_hour_cycle_on_a_weekday():
+    """The original 4-exchange registry (core-session hours only) left a
+    ~5-hour daily dead zone with nothing open. SGX's pre-open (08:00 SGT) and
+    NYSE's realistic pre/post-market window (04:00-20:00 ET) together close
+    that gap - at every half hour of a full weekday, at least one of the 4
+    should be open, in both DST regimes (checked at a summer and a winter date,
+    both Wednesdays so weekend closures don't confound the check)."""
+    for month, day in [(7, 8), (12, 9)]:
+        for hour in range(24):
+            for minute in (0, 30):
+                t = dt.datetime(2026, month, day, hour, minute, tzinfo=dt.timezone.utc)
+                assert ex.get_open_exchange(t) is not None, f"gap at {month}-{day} {hour:02d}:{minute:02d} UTC"
 
 
 def test_priority_order_breaks_ties_when_multiple_exchanges_are_open():
