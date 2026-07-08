@@ -33,6 +33,16 @@ class Settings(BaseSettings):
     # execution would have. Raise this if your API tier comfortably supports it.
     max_parallel_agents: int = 4
 
+    # Optional India macro inputs for the Macroeconomist Analyst's regime model
+    # (GDP growth, CPI inflation, RBI repo rate). No free live feed for these is
+    # wired up, so rather than fabricate numbers this is left unset by default -
+    # the agent falls back to its news-sentiment-only reading until you fill
+    # these in from RBI/MOSPI bulletins (update periodically; they move slowly).
+    macro_gdp_growth_pct: float | None = None
+    macro_inflation_pct: float | None = None
+    macro_policy_rate_pct: float | None = None
+    macro_data_as_of: str = ""  # ISO date, e.g. "2026-06-30"
+
     @property
     def watchlist_symbols(self) -> list[str]:
         return [s.strip() for s in self.watchlist.split(",") if s.strip()]

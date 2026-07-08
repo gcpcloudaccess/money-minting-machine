@@ -15,6 +15,7 @@ class AnalysisContext:
     fundamentals: dict
     symbol_news: list[dict]
     market_news: list[dict]
+    financial_statements: dict = field(default_factory=dict)  # income/balance/cashflow, see data/fundamentals.py
     peer_bars: dict[str, pd.DataFrame] = field(default_factory=dict)
     current_action_so_far: str | None = None
     daily_bars: pd.DataFrame | None = None  # symbol's own daily OHLCV history (~6mo)

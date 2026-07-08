@@ -61,11 +61,16 @@ def run_committee_for_symbol(
     symbol_news = news_data.fetch_symbol_news(company_query)
     market_news = news_data.fetch_market_news()
     open_positions = _current_open_positions(db, symbol, fundamentals.get("sector"))
+    try:
+        financial_statements = fundamentals_data.get_financial_statements(symbol)
+    except Exception:
+        financial_statements = {}
 
     ctx = AnalysisContext(
         symbol=symbol, bars=bars, fundamentals=fundamentals,
         symbol_news=symbol_news, market_news=market_news, peer_bars=peer_bars,
         daily_bars=daily_bars, benchmark_bars=benchmark_bars, open_positions=open_positions,
+        financial_statements=financial_statements,
     )
 
     analyst_votes, debate_vote, critic_votes = run_debate(ctx)
