@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     tick_minutes: int = 10
     watchlist: str = "RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS,LT.NS,SBIN.NS,ITC.NS"
 
+    # Drives the Investment Planner's asset-allocation caps and profit/loss goals
+    # (see agents/allocation_planner.py) - conservative | moderate | aggressive.
+    risk_tolerance: str = "moderate"
+
     backend_host: str = "127.0.0.1"
     backend_port: int = 8000
 

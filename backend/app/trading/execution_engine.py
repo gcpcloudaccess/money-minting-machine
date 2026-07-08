@@ -32,6 +32,10 @@ def get_open_exposure(db: Session, portfolio: Portfolio) -> float:
     return sum(p.quantity * p.avg_price for p in positions)
 
 
+def get_open_positions(db: Session, portfolio: Portfolio) -> list[Position]:
+    return db.query(Position).filter_by(portfolio_id=portfolio.id, status="open").all()
+
+
 def get_open_position(db: Session, portfolio: Portfolio, symbol: str) -> Position | None:
     return db.query(Position).filter_by(portfolio_id=portfolio.id, symbol=symbol, status="open").one_or_none()
 

@@ -8,7 +8,9 @@ from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+from app.agents import allocation_planner
 from app.config import get_settings
+from app.data import fundamentals as fundamentals_data
 from app.data.market_data import MarketDataProvider
 from app.db.models import AgentVote, AuditLog, Decision, Portfolio, Position, Trade
 from app.db.session import get_db, init_db
@@ -270,6 +272,36 @@ def get_settings_view() -> dict:
         "session_hours": settings.session_hours,
         "tick_minutes": settings.tick_minutes,
         "watchlist": settings.watchlist_symbols,
+        "risk_tolerance": settings.risk_tolerance,
+    }
+
+
+@app.get("/planner/allocation-plan")
+def get_allocation_plan(db: Session = Depends(get_db)) -> dict:
+    """Investment Planner Agent: current session's asset-allocation caps
+    (per-symbol, per-sector) and profit/loss goals, plus live progress toward
+    those goals for the active portfolio."""
+    portfolio = execution_engine.get_active_portfolio(db)
+    plan = allocation_planner.build_plan(settings.risk_tolerance, portfolio.starting_capital, portfolio.leverage * portfolio.starting_capital)
+
+    open_exposure = execution_engine.get_open_exposure(db, portfolio)
+    running_pnl_estimate = round(portfolio.cash_inr + open_exposure - portfolio.starting_capital, 2)
+
+    sector_exposure: dict[str, float] = {}
+    for p in execution_engine.get_open_positions(db, portfolio):
+        sector = fundamentals_data.get_sector(p.symbol)
+        sector_exposure[sector] = sector_exposure.get(sector, 0.0) + p.quantity * p.avg_price
+
+    return {
+        "risk_tolerance": plan.risk_tolerance,
+        "symbol_cap_inr": plan.symbol_cap_inr,
+        "sector_cap_inr": plan.sector_cap_inr,
+        "profit_target_inr": plan.profit_target_inr,
+        "loss_limit_inr": plan.loss_limit_inr,
+        "reasoning": plan.reasoning,
+        "running_pnl_estimate": running_pnl_estimate,
+        "goal_hit": running_pnl_estimate >= plan.profit_target_inr or running_pnl_estimate <= plan.loss_limit_inr,
+        "sector_exposure": {k: round(v, 2) for k, v in sector_exposure.items()},
     }
 
 

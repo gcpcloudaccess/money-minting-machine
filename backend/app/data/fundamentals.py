@@ -3,8 +3,22 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import pandas as pd
 import yfinance as yf
+
+
+@lru_cache(maxsize=64)
+def get_sector(symbol: str) -> str:
+    """Cached sector lookup - sector doesn't change intraday, and the allocation
+    planner's per-sector exposure cap needs this for every open position on every
+    trade decision, not just the symbol currently under analysis."""
+    ticker = yf.Ticker(symbol)
+    try:
+        return ticker.info.get("sector") or "Unknown"
+    except Exception:
+        return "Unknown"
 
 
 def get_fundamentals(symbol: str) -> dict:

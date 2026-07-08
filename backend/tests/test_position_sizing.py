@@ -75,3 +75,42 @@ def test_never_exceeds_portfolio_wide_exposure_cap():
         current_open_exposure=20_000.0, cash_available=10_000.0,  # at the 2x cap already
     )
     assert result["quantity"] == 0
+
+
+def test_symbol_cap_blocks_new_position_when_exhausted():
+    """Investment Planner's per-symbol allocation cap (allocation_planner.py) must be
+    enforced even when cash/leverage/portfolio-exposure budget would otherwise allow it."""
+    result = position_sizing.size_position(
+        directional_confidence_pct=30.0, risk_level="LOW", price=1000.0,
+        current_open_exposure=0.0, cash_available=10_000.0,
+        symbol_cap_inr=5_000.0, current_symbol_exposure=5_000.0,  # already at this symbol's cap
+    )
+    assert result["quantity"] == 0
+    assert "symbol" in result["reason"].lower()
+
+
+def test_sector_cap_blocks_new_position_when_exhausted():
+    result = position_sizing.size_position(
+        directional_confidence_pct=30.0, risk_level="LOW", price=1000.0,
+        current_open_exposure=0.0, cash_available=10_000.0,
+        sector_cap_inr=7_000.0, current_sector_exposure=7_000.0,  # already at this sector's cap
+    )
+    assert result["quantity"] == 0
+    assert "sector" in result["reason"].lower()
+
+
+def test_symbol_cap_limits_notional_without_blocking_entirely():
+    """A partially-used symbol cap should shrink the trade, not zero it out or get
+    ignored in favor of the (larger) portfolio-wide exposure budget."""
+    uncapped = position_sizing.size_position(
+        directional_confidence_pct=30.0, risk_level="LOW", price=100.0,
+        current_open_exposure=0.0, cash_available=10_000.0,
+    )
+    capped = position_sizing.size_position(
+        directional_confidence_pct=30.0, risk_level="LOW", price=100.0,
+        current_open_exposure=0.0, cash_available=10_000.0,
+        symbol_cap_inr=2_000.0, current_symbol_exposure=0.0,
+    )
+    assert capped["notional"] < uncapped["notional"]
+    assert capped["notional"] > 0.0
+    assert capped["binding_constraint"] == "symbol_cap"

@@ -41,6 +41,24 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+st.write("")
+st.subheader("Investment Planner — Asset Allocation & Goals")
+plan = get("/planner/allocation-plan")
+p1, p2, p3, p4 = st.columns(4)
+p1.markdown(metric_card("Risk Tolerance", plan["risk_tolerance"].capitalize()), unsafe_allow_html=True)
+p2.markdown(metric_card("Per-Symbol Cap", f"₹{plan['symbol_cap_inr']:,.0f}"), unsafe_allow_html=True)
+p3.markdown(metric_card("Per-Sector Cap", f"₹{plan['sector_cap_inr']:,.0f}"), unsafe_allow_html=True)
+p4.markdown(
+    metric_card("Profit Target / Loss Limit", f"+₹{plan['profit_target_inr']:,.0f} / ₹{plan['loss_limit_inr']:,.0f}"),
+    unsafe_allow_html=True,
+)
+st.markdown(f'<div class="ic-card">{plan["reasoning"]}</div>', unsafe_allow_html=True)
+st.caption(
+    "Set via `RISK_TOLERANCE` in `backend/.env` (conservative | moderate | aggressive). These caps gate every new "
+    "BUY the Portfolio Manager Agent considers — a trade that would breach the symbol/sector cap is sized down or "
+    "skipped, and once the profit target or loss limit is hit, no new positions open for the rest of the session."
+)
+
 st.markdown('<hr class="ic-divider">', unsafe_allow_html=True)
 st.subheader("Architecture Notes")
 st.markdown(

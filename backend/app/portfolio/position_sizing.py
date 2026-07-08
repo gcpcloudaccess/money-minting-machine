@@ -31,15 +31,34 @@ def size_position(
     price: float,
     current_open_exposure: float,
     cash_available: float,
+    symbol_cap_inr: float | None = None,
+    current_symbol_exposure: float = 0.0,
+    sector_cap_inr: float | None = None,
+    current_sector_exposure: float = 0.0,
 ) -> dict:
     settings = get_settings()
     max_leverage = settings.leverage  # hard ceiling, e.g. 2.0 for 1:2
     max_exposure = settings.max_exposure_inr  # starting_capital * max_leverage, portfolio-wide ceiling
     remaining_exposure_budget = max(max_exposure - current_open_exposure, 0.0)
 
-    if price <= 0 or remaining_exposure_budget <= 0:
+    # Investment Planner's per-symbol/per-sector allocation caps (see
+    # agents/allocation_planner.py) - None means "no cap configured", not "zero budget".
+    remaining_symbol_budget = (
+        max(symbol_cap_inr - current_symbol_exposure, 0.0) if symbol_cap_inr is not None else float("inf")
+    )
+    remaining_sector_budget = (
+        max(sector_cap_inr - current_sector_exposure, 0.0) if sector_cap_inr is not None else float("inf")
+    )
+
+    if price <= 0 or remaining_exposure_budget <= 0 or remaining_symbol_budget <= 0 or remaining_sector_budget <= 0:
+        if price <= 0 or remaining_exposure_budget <= 0:
+            reason = "No exposure budget remaining under leverage cap."
+        elif remaining_symbol_budget <= 0:
+            reason = "Per-symbol allocation cap reached (Investment Planner)."
+        else:
+            reason = "Per-sector allocation cap reached (Investment Planner)."
         return {
-            "quantity": 0, "notional": 0.0, "reason": "No exposure budget remaining under leverage cap.",
+            "quantity": 0, "notional": 0.0, "reason": reason,
             "leverage_used": 1.0, "margin_used_inr": 0.0, "max_leverage": max_leverage,
         }
 
@@ -52,9 +71,16 @@ def size_position(
     leverage_used = round(min(max_leverage, BASE_LEVERAGE + strength * risk_multiplier * (max_leverage - BASE_LEVERAGE)), 3)
 
     # Buying power for this trade: available cash amplified by the leverage above, capped by
-    # the portfolio-wide exposure budget so the overall 2x-of-starting-capital ceiling holds
-    # even across multiple open positions.
-    buying_power = min(cash_available * leverage_used, remaining_exposure_budget)
+    # the portfolio-wide exposure budget and the Investment Planner's per-symbol/per-sector
+    # allocation caps, so none of those ceilings can be bypassed by a single large trade.
+    budgets = {
+        "cash_x_leverage": cash_available * leverage_used,
+        "portfolio_exposure_cap": remaining_exposure_budget,
+        "symbol_cap": remaining_symbol_budget,
+        "sector_cap": remaining_sector_budget,
+    }
+    binding_constraint = min(budgets, key=budgets.get)
+    buying_power = budgets[binding_constraint]
 
     # Deploy fraction now describes how much of THIS TRADE's leveraged buying power to commit
     # (not a small slice of the total portfolio budget) - 50% at minimum decisive confidence,
@@ -76,4 +102,5 @@ def size_position(
         "leverage_used": leverage_used,
         "margin_used_inr": margin_used_inr,
         "max_leverage": max_leverage,
+        "binding_constraint": binding_constraint,
     }

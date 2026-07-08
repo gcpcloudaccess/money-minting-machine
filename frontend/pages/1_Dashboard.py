@@ -54,6 +54,23 @@ st.caption(
 )
 
 st.write("")
+st.subheader("Investment Planner — Goal Progress")
+plan = get("/planner/allocation-plan")
+g1, g2, g3 = st.columns(3)
+g1.markdown(
+    metric_card("Today's P&L (est.)", f"₹{plan['running_pnl_estimate']:,.2f}", tone=tone_for(plan["running_pnl_estimate"])),
+    unsafe_allow_html=True,
+)
+g2.markdown(metric_card("Profit Target", f"+₹{plan['profit_target_inr']:,.0f}"), unsafe_allow_html=True)
+g3.markdown(metric_card("Loss Limit", f"₹{plan['loss_limit_inr']:,.0f}"), unsafe_allow_html=True)
+if plan["goal_hit"]:
+    st.warning(f"Session goal reached ({plan['risk_tolerance']} profile) — the Portfolio Manager Agent will not open new positions for the rest of this session. Existing positions still monitored normally.")
+else:
+    span = plan["profit_target_inr"] - plan["loss_limit_inr"]
+    progress = (plan["running_pnl_estimate"] - plan["loss_limit_inr"]) / span if span else 0.5
+    st.progress(min(max(progress, 0.0), 1.0))
+
+st.write("")
 chart_col, price_col = st.columns([3, 2])
 with chart_col:
     st.subheader("Portfolio Growth Curve")
