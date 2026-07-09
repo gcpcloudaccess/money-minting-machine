@@ -72,7 +72,7 @@ jobs:
           env_vars: |
             LLM_PROVIDER=anthropic
             ANTHROPIC_MODEL=claude-sonnet-5
-            DATA_MODE=replay
+            DATA_MODE=live
             REPLAY_EXCHANGE=NSE
             STARTING_CAPITAL_INR=10000
             LEVERAGE=2
