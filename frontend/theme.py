@@ -72,16 +72,28 @@ def inject_base_css() -> None:
         .ic-metric-card {
             background: linear-gradient(165deg, #101827 0%, #0B1220 100%);
             border: 1px solid #1A2333; border-radius: 14px;
-            padding: 0.95rem 1.15rem; min-height: 100px; height: 100%;
+            padding: 0.95rem 1rem; min-height: 100px; height: 100%;
             box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start;
             box-shadow: 0 1px 0 0 rgba(255,255,255,0.03) inset;
         }
         .ic-metric-label {
             font-size: 0.72rem; font-weight: 700; color: #64748B; text-transform: uppercase; letter-spacing: 0.06em;
+            white-space: nowrap;
         }
         .ic-metric-value {
-            font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-size: 1.45rem; font-weight: 700;
+            /* A 6-across KPI strip leaves ~140-160px per card - a bare 1.45rem
+               never fit a real number like "10,001.07" and was breaking mid-digit
+               (no spaces to wrap on, so the browser hard-split the string).
+               clamp() scales the font down to fit instead of a fixed size, and
+               nowrap forbids wrapping - so a too-long value is never split
+               across lines. Deliberately NOT clipped/ellipsized: a money figure
+               that's silently cut off is worse than one that's visually tight,
+               so in a genuine worst case it overflows the card rather than
+               hiding digits. */
+            font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-weight: 700;
+            font-size: clamp(0.95rem, 1.8vw, 1.45rem);
             color: #F8FAFC; margin-top: 0.28rem; letter-spacing: -0.01em;
+            white-space: nowrap;
         }
         .ic-metric-delta {
             font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-size: 0.8rem; font-weight: 600;
