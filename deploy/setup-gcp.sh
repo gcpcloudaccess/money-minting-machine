@@ -17,7 +17,7 @@ AR_REPO="money-minting-machine"
 # If you rename the GitHub repo itself, update this to match BEFORE running
 # this script (the OIDC token's "repository" claim has to match exactly, or
 # workload identity federation will reject the login).
-GITHUB_REPO="gcpcloudaccess/investment-committee"
+GITHUB_REPO="gcpcloudaccess/money-minting-machine"
 DEPLOYER_SA="github-deployer"
 WIF_POOL="github-pool"
 WIF_PROVIDER="github-provider"
