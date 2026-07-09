@@ -27,7 +27,7 @@ if not settings["llm_key_configured"]:
     )
 
 nav_items = [
-    ("📊", "Dashboard", "Live portfolio value, P&L, open positions, equity curve"),
+    ("📊", "Dashboard-M3 (Money Minting Machine)", "Live portfolio value, P&L, open positions, equity curve"),
     ("👀", "Watchlist", "Candidate stocks and their latest committee signal"),
     ("🔍", "Stock Search", "Run the full committee on any NSE symbol on demand"),
     ("🏛️", "Committee Meetings", "The full debate transcript behind any decision"),

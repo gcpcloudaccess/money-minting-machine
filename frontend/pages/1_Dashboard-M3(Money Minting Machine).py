@@ -6,9 +6,9 @@ import streamlit as st
 from api_client import get, post
 from theme import inject_base_css, metric_card, page_header, tone_for, verdict_badge
 
-st.set_page_config(page_title="Dashboard", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Dashboard-M3 (Money Minting Machine)", page_icon="📊", layout="wide")
 inject_base_css()
-page_header("📊", "Dashboard", "Live portfolio state for the active paper-trading session")
+page_header("📊", "Dashboard-M3 (Money Minting Machine)", "Live portfolio state for the active paper-trading session")
 
 tick_status = get("/session/tick-status")
 portfolio = get("/portfolio")
@@ -198,9 +198,7 @@ with main_col:
                 st.download_button("Download Last Generated PDF", f, file_name=Path(last_path).name, mime="application/pdf")
 
 # ================================================================== RIGHT: session control panel
-with side_col:
-    st.markdown('<div class="ic-panel">', unsafe_allow_html=True)
-
+with side_col, st.container(border=True):
     st.markdown('<div class="ic-panel-title">Auto-Trading</div>', unsafe_allow_html=True)
     if tick_status["paused"]:
         st.markdown(
@@ -270,5 +268,3 @@ with side_col:
             post("/session/close")
         st.success("Session closed. PDF generated — see Reports & Logs.")
         st.rerun()
-
-    st.markdown("</div>", unsafe_allow_html=True)

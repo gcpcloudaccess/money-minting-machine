@@ -89,10 +89,11 @@ def inject_base_css() -> None:
             box-shadow: 0 1px 0 0 rgba(255,255,255,0.03) inset;
         }
 
-        .ic-panel {
-            background: linear-gradient(180deg, #0F1626 0%, #0A0F1C 100%);
-            border: 1px solid #1A2333; border-radius: 16px; padding: 1.2rem 1.3rem;
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            background: linear-gradient(180deg, #0F1626 0%, #0A0F1C 100%) !important;
+            border: 1px solid #1A2333 !important; border-radius: 16px !important;
         }
+        [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { gap: 0.5rem; }
         .ic-panel-title {
             font-size: 0.75rem; font-weight: 700; color: #5B6B84; text-transform: uppercase;
             letter-spacing: 0.08em; margin: 1.1rem 0 0.6rem 0;
