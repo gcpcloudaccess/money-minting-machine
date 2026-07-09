@@ -27,7 +27,7 @@ else:
         "— replay mode always uses a single fixed exchange so it's demoable any time."
     )
 st.markdown(
-    f'<div class="ic-card">Data Mode: <b style="color:#22D3EE;">{settings["data_mode"].upper()}</b> — {data_mode_note}</div>',
+    f'<div class="ic-card">Data Mode: <b style="color:#2DD4BF;">{settings["data_mode"].upper()}</b> — {data_mode_note}</div>',
     unsafe_allow_html=True,
 )
 

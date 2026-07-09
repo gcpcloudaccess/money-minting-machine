@@ -6,11 +6,11 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 
-LINE_COLOR = "#22D3EE"
-BUY_COLOR = "#4ADE80"
-SELL_COLOR = "#F87171"
-GRID_COLOR = "#1E293B"
-TEXT_COLOR = "#94A3B8"
+LINE_COLOR = "#2DD4BF"
+BUY_COLOR = "#2DD4BF"
+SELL_COLOR = "#FB7185"
+GRID_COLOR = "#1A2333"
+TEXT_COLOR = "#8B96A8"
 
 
 def build_equity_curve(timestamps: list[str], equity_values: list[float], trade_markers: list[dict]) -> dict:
@@ -18,7 +18,7 @@ def build_equity_curve(timestamps: list[str], equity_values: list[float], trade_
     fig.add_trace(
         go.Scatter(
             x=timestamps, y=equity_values, mode="lines", name="Portfolio Value (₹)",
-            line={"width": 2.5, "color": LINE_COLOR}, fill="tozeroy", fillcolor="rgba(34, 211, 238, 0.08)",
+            line={"width": 2.5, "color": LINE_COLOR}, fill="tozeroy", fillcolor="rgba(45, 212, 191, 0.10)",
         )
     )
 

@@ -39,10 +39,11 @@ for i, (icon, title, desc) in enumerate(nav_items):
     with cols[i % 3]:
         st.markdown(
             f"""
-            <div class="ic-card" style="min-height:118px">
-                <div style="font-size:1.6rem">{icon}</div>
-                <div style="font-weight:700; color:#F1F5F9; margin-top:0.3rem;">{title}</div>
-                <div style="font-size:0.85rem; color:#94A3B8; margin-top:0.2rem;">{desc}</div>
+            <div class="ic-card" style="min-height:126px">
+                <div style="width:42px; height:42px; border-radius:11px; display:flex; align-items:center; justify-content:center;
+                     background:rgba(45,212,191,0.10); border:1px solid rgba(45,212,191,0.25); font-size:1.25rem;">{icon}</div>
+                <div style="font-weight:700; color:#F8FAFC; margin-top:0.6rem;">{title}</div>
+                <div style="font-size:0.85rem; color:#8B96A8; margin-top:0.2rem;">{desc}</div>
             </div>
             """,
             unsafe_allow_html=True,
