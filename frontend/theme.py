@@ -59,10 +59,21 @@ def inject_base_css() -> None:
         .ic-page-header-title { font-size: 1.4rem; font-weight: 800; color: #F8FAFC; letter-spacing: -0.01em; }
         .ic-page-header-subtitle { font-size: 0.88rem; color: #8B96A8; margin-top: 0.15rem; }
 
+        /* Streamlit doesn't stretch sibling columns to equal height by default,
+           so cards with a delta line ended up taller than ones without - making
+           the value line land at a different vertical position per card. Force
+           the row to stretch, and give every card a shared min-height baseline
+           (a row grows past it together if one card's content genuinely needs
+           more room, e.g. a long wrapped delta message). */
+        [data-testid="stHorizontalBlock"] { align-items: stretch; }
+        [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { display: flex; flex-direction: column; }
+        [data-testid="stColumn"] > div { width: 100%; }
+
         .ic-metric-card {
             background: linear-gradient(165deg, #101827 0%, #0B1220 100%);
             border: 1px solid #1A2333; border-radius: 14px;
-            padding: 0.95rem 1.15rem; height: 100%;
+            padding: 0.95rem 1.15rem; min-height: 100px; height: 100%;
+            box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start;
             box-shadow: 0 1px 0 0 rgba(255,255,255,0.03) inset;
         }
         .ic-metric-label {
