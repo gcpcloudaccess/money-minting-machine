@@ -62,6 +62,13 @@ jobs:
             --memory=1Gi
             --cpu=1
             --timeout=600
+          # replace (not the default merge) so a stale env var/secret left over
+          # from an earlier failed deploy attempt (e.g. the WATCHLIST-splitting
+          # bug, or the unversioned OPENAI_API_KEY/NEWSAPI_KEY refs) can never
+          # persist on the service forever just because a later run stopped
+          # mentioning it - every deploy fully reconciles to exactly this list.
+          env_vars_update_strategy: replace
+          secrets_update_strategy: replace
           env_vars: |
             LLM_PROVIDER=anthropic
             ANTHROPIC_MODEL=claude-sonnet-5
@@ -112,6 +119,7 @@ jobs:
             --memory=1Gi
             --cpu=1
             --timeout=600
+          env_vars_update_strategy: replace
           env_vars: |
             BACKEND_URL=${{ steps.deploy_backend.outputs.url }}
 
