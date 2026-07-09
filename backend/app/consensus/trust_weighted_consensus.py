@@ -66,12 +66,15 @@ AGREEMENT_ADJ_MAX = 1.6
 # Empirically, real BUY/SELL-leaning pluralities in this system's live runs
 # cap out around 20-25% directional confidence, not 40-50% - so a 30%
 # decisive bar (already lowered once from an initial 50%) still left the
-# system unable to ever trade in practice. Lowered further so a genuine,
-# above-noise directional lean can actually execute instead of always losing
-# to HOLD's vote-count advantage. This is a deliberate trade-off toward
-# trading more actively; it does not require near-consensus the way the
-# original thresholds effectively did.
-DECISIVE_THRESHOLD = 18.0
+# system unable to ever trade in practice. Lowered to 18%, then further to
+# 14% (2026-07-09) after a live NSE morning session where directional
+# candidates were consistently landing just under 18% and losing to HOLD's
+# vote-count advantage tick after tick with zero trades all session - still a
+# meaningful gap above LOW_CONVICTION_THRESHOLD's 10% noise floor, but low
+# enough for a genuine, above-noise lean to actually execute. This is a
+# deliberate trade-off toward trading more actively; it does not require
+# near-consensus the way the original thresholds effectively did.
+DECISIVE_THRESHOLD = 14.0
 LOW_CONVICTION_THRESHOLD = 10.0
 
 

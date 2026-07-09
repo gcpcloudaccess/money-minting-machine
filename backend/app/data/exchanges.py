@@ -47,7 +47,16 @@ NSE = Exchange(
     code="NSE", label="India (NSE)", tz=ZoneInfo("Asia/Kolkata"),
     open_time=dt.time(9, 15), close_time=dt.time(15, 30), currency="INR", suffix=".NS",
     benchmark_symbol="^NSEI",
-    watchlist=("RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "LT.NS", "SBIN.NS", "ITC.NS"),
+    # Widened from the original 8 (2026-07-09) - the Investment Planner still only
+    # analyzes up to 4 symbols/tick (settings.max_parallel_agents-bounded), so this
+    # doesn't raise per-tick LLM cost; it raises the odds that *some* symbol in the
+    # day's rotation clears the decisive threshold instead of the same 8 repeatedly
+    # landing HOLD together.
+    watchlist=(
+        "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "LT.NS", "SBIN.NS", "ITC.NS",
+        "BHARTIARTL.NS", "AXISBANK.NS", "KOTAKBANK.NS", "MARUTI.NS", "SUNPHARMA.NS", "TITAN.NS", "ASIANPAINT.NS",
+        "BAJFINANCE.NS", "HCLTECH.NS", "WIPRO.NS",
+    ),
 )
 SGX = Exchange(
     # 08:00 rather than the exchange's 09:00 core-session open - a realistic
