@@ -18,7 +18,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./investment_committee.db"
 
-    starting_capital_inr: float = 1_000_000.0  # ₹10 lac paper capital
+    starting_capital_inr: float = 100_000.0  # ₹1 lac paper capital
     leverage: float = 1.0  # no margin - cash-only paper trading
     session_hours: float = 4.0
     tick_minutes: int = 10
