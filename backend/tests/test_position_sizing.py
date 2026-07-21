@@ -64,7 +64,7 @@ def test_notional_scales_down_with_risk():
 def test_no_margin_is_ever_drawn_even_for_a_strong_low_risk_signal():
     """Even the most aggressive case (high confidence, LOW risk) must stay
     within available cash under the no-margin default - this is the direct
-    guarantee the ₹10,00,000 cash-only paper capital configuration relies on."""
+    guarantee the ₹1,00,000 cash-only paper capital configuration relies on."""
     result = position_sizing.size_position(
         directional_confidence_pct=30.0, risk_level="LOW", price=100.0,
         current_open_exposure=0.0, cash_available=10_000.0,
@@ -75,10 +75,10 @@ def test_no_margin_is_ever_drawn_even_for_a_strong_low_risk_signal():
 
 def test_never_exceeds_portfolio_wide_exposure_cap():
     # Exposure budget already exhausted -> no new position regardless of confidence.
-    # settings default: ₹10,00,000 capital x 1.0 leverage (no margin) = ₹10,00,000 cap.
+    # settings default: ₹1,00,000 capital x 1.0 leverage (no margin) = ₹1,00,000 cap.
     result = position_sizing.size_position(
         directional_confidence_pct=100.0, risk_level="LOW", price=1000.0,
-        current_open_exposure=1_000_000.0, cash_available=10_000.0,  # at the cap already
+        current_open_exposure=100_000.0, cash_available=10_000.0,  # at the cap already
     )
     assert result["quantity"] == 0
 

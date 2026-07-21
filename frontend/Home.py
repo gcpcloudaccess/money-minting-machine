@@ -23,7 +23,9 @@ if not app_settings["llm_key_configured"]:
     )
 
 # ---------------------------------------------------------------- top KPI strip
-k1, k2, k3, k4, k5, k6 = st.columns(6)
+# Overall Return (across all sessions) is folded in here rather than living in
+# its own section further down the page - one KPI strip, no separate block.
+k1, k2, k3, k4, k5, k6, k7 = st.columns(7)
 k1.markdown(metric_card("Status", portfolio["status"].upper(), tone=status_tone), unsafe_allow_html=True)
 if app_settings["data_mode"] == "live":
     exchange_delta = "open now" if portfolio["exchange"] == app_settings["currently_open_exchange"] else "closed — will resume next tick"
@@ -37,13 +39,17 @@ k4.markdown(
     metric_card("Today's Return", f"₹{portfolio['net_profit']:,.2f}", delta=f"{portfolio['total_return_pct']:+.2f}%", tone=tone_for(portfolio["net_profit"])),
     unsafe_allow_html=True,
 )
-k5.markdown(metric_card("Cash", f"₹{portfolio['cash']:,.2f}"), unsafe_allow_html=True)
-k6.markdown(metric_card("Open Exposure", f"₹{portfolio['open_positions_value']:,.2f}"), unsafe_allow_html=True)
+k5.markdown(
+    metric_card("Overall Return", f"₹{overall['net_profit']:,.2f}", delta=f"{overall['return_pct']:+.2f}% · {overall['total_sessions']} sessions", tone=tone_for(overall["net_profit"])),
+    unsafe_allow_html=True,
+)
+k6.markdown(metric_card("Cash", f"₹{portfolio['cash']:,.2f}"), unsafe_allow_html=True)
+k7.markdown(metric_card("Open Exposure", f"₹{portfolio['open_positions_value']:,.2f}"), unsafe_allow_html=True)
 
 st.write("")
 main_col, side_col = st.columns([2.3, 1], gap="medium")
 
-# ================================================================== LEFT: hero chart + tabs
+# ================================================================== LEFT: single flat page
 with main_col:
     watchlist = app_settings["watchlist"]
     held_symbols = [p["symbol"] for p in portfolio["positions"]]
@@ -55,160 +61,149 @@ with main_col:
     chart_data = get(f"/market/chart/{chart_symbol}", silent=True)
     if chart_data:
         st.plotly_chart(go.Figure(chart_data["figure"]), width="stretch", config={"displayModeBar": False})
+        if chart_data.get("used_comex_proxy"):
+            st.info(
+                f"NSE is currently closed — this chart is reading live COMEX futures "
+                f"(`{chart_data.get('source_symbol')}`) as an analysis-feed proxy for {chart_symbol}. "
+                "No trade can execute on this feed until NSE reopens; P&L always uses the real NSE price."
+            )
     else:
         st.markdown('<div class="ic-card">No chart data available for this symbol right now.</div>', unsafe_allow_html=True)
 
+    st.divider()
+
+    # -------------------------------------------------------------- session output
+    is_closed = portfolio["status"] != "active"
+    output_title = "FINAL SYSTEM OUTPUT — AT MARKET CLOSE" if is_closed else "LIVE SYSTEM OUTPUT — SESSION IN PROGRESS"
+    st.markdown(
+        f"""
+        <div class="ic-card" style="background:linear-gradient(135deg,#101827 0%,#0A0F1C 100%); text-align:center;
+             font-weight:700; color:#F8FAFC; letter-spacing:0.06em; padding:0.7rem; font-size:0.85rem;">
+            {output_title}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    f1, f2, f3, f4 = st.columns(4)
+    f1.markdown(metric_card("Final Portfolio Value", f"₹{portfolio['total_value']:,.2f}", tone=tone_for(portfolio["net_profit"])), unsafe_allow_html=True)
+    f2.markdown(
+        metric_card("Net Profit / Loss", f"₹{portfolio['net_profit']:,.2f}", delta="after brokerage, taxes & trading costs", tone=tone_for(portfolio["net_profit"])),
+        unsafe_allow_html=True,
+    )
+    f3.markdown(metric_card("Total Return", f"{portfolio['total_return_pct']:+.1f}%", tone=tone_for(portfolio["total_return_pct"])), unsafe_allow_html=True)
+    f4.markdown(
+        metric_card("Win Rate", f"{portfolio['win_rate_pct']:.0f}%", delta=f"{portfolio['winning_trades_count']} of {portfolio['closed_trades_count']} trades" if portfolio["closed_trades_count"] else "no closed trades yet"),
+        unsafe_allow_html=True,
+    )
+
     st.write("")
-    tab_overview, tab_positions, tab_planner, tab_reports = st.tabs(["Overview", "Positions & Trades", "Planner & Risk", "Reports"])
+    st.subheader("Portfolio Growth Curve")
+    eq = get("/portfolio/equity-curve")
+    if eq["figure"]["data"]:
+        st.plotly_chart(go.Figure(eq["figure"]), width="stretch", config={"displayModeBar": False})
+    else:
+        st.info("No trades yet this session — equity curve will populate once the committee executes trades.")
 
-    # -------------------------------------------------------------- Overview
-    with tab_overview:
-        is_closed = portfolio["status"] != "active"
-        output_title = "FINAL SYSTEM OUTPUT — AT MARKET CLOSE" if is_closed else "LIVE SYSTEM OUTPUT — SESSION IN PROGRESS"
-        st.markdown(
-            f"""
-            <div class="ic-card" style="background:linear-gradient(135deg,#101827 0%,#0A0F1C 100%); text-align:center;
-                 font-weight:700; color:#F8FAFC; letter-spacing:0.06em; padding:0.7rem; font-size:0.85rem;">
-                {output_title}
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        f1, f2, f3, f4 = st.columns(4)
-        f1.markdown(metric_card("Final Portfolio Value", f"₹{portfolio['total_value']:,.2f}", tone=tone_for(portfolio["net_profit"])), unsafe_allow_html=True)
-        f2.markdown(
-            metric_card("Net Profit / Loss", f"₹{portfolio['net_profit']:,.2f}", delta="after brokerage, taxes & trading costs", tone=tone_for(portfolio["net_profit"])),
-            unsafe_allow_html=True,
-        )
-        f3.markdown(metric_card("Total Return", f"{portfolio['total_return_pct']:+.1f}%", tone=tone_for(portfolio["total_return_pct"])), unsafe_allow_html=True)
-        f4.markdown(
-            metric_card("Win Rate", f"{portfolio['win_rate_pct']:.0f}%", delta=f"{portfolio['winning_trades_count']} of {portfolio['closed_trades_count']} trades" if portfolio["closed_trades_count"] else "no closed trades yet"),
-            unsafe_allow_html=True,
-        )
-
-        st.write("")
-        st.subheader("Portfolio Growth Curve")
-        eq = get("/portfolio/equity-curve")
-        if eq["figure"]["data"]:
-            st.plotly_chart(go.Figure(eq["figure"]), width="stretch", config={"displayModeBar": False})
-        else:
-            st.info("No trades yet this session — equity curve will populate once the committee executes trades.")
-
-        st.write("")
-        st.subheader("Overall Return (across all sessions)")
-        o1, o2, o3, o4 = st.columns(4)
-        o1.markdown(
-            metric_card("Overall Net Profit", f"₹{overall['net_profit']:,.2f}", delta=f"{overall['return_pct']:+.2f}%", tone=tone_for(overall["net_profit"])),
-            unsafe_allow_html=True,
-        )
-        o2.markdown(
-            metric_card("Cumulative Capital Deployed", f"₹{overall['starting_capital']:,.2f}", delta=f"{overall['total_sessions']} × ₹{portfolio['starting_capital']:,.0f} sessions"),
-            unsafe_allow_html=True,
-        )
-        o3.markdown(metric_card("Cumulative Ending Value", f"₹{overall['ending_value']:,.2f}"), unsafe_allow_html=True)
-        o4.markdown(metric_card("Sessions Run", f"{overall['total_sessions']}", delta=f"{overall['closed_sessions']} closed"), unsafe_allow_html=True)
-        st.caption(
-            f"Not a leverage figure. Each of the {overall['total_sessions']} sessions independently starts fresh at "
-            f"₹{portfolio['starting_capital']:,.0f} (non-compounding) — this row just adds them up for a historical total. "
-            f"This build runs cash-only (no margin): leverage is fixed at {portfolio['leverage']:.0f}×, so exposure never "
-            "exceeds available cash."
-        )
+    st.divider()
 
     # -------------------------------------------------------------- Positions & Trades
-    with tab_positions:
-        st.subheader("Open Positions")
-        if portfolio["positions"]:
-            for p in portfolio["positions"]:
-                st.markdown(
-                    f"""
-                    <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center;">
-                        <div>
-                            <span style="font-weight:700; color:#F8FAFC; font-size:1.05rem;">{p['symbol']}</span>
-                            <span class="ic-badge" style="margin-left:0.6rem; background:#0B2A24;color:#2DD4BF;border:1px solid #14B8A6;">{p['side']}</span>
-                        </div>
-                        <div style="font-family:'JetBrains Mono','SF Mono',monospace; color:#8B96A8;">
-                            Qty {p['quantity']:g} @ ₹{p['avg_price']:,.2f}
-                        </div>
+    st.subheader("Positions & Trades")
+    st.markdown("**Open Positions**")
+    if portfolio["positions"]:
+        for p in portfolio["positions"]:
+            st.markdown(
+                f"""
+                <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <span style="font-weight:700; color:#F8FAFC; font-size:1.05rem;">{p['symbol']}</span>
+                        <span class="ic-badge" style="margin-left:0.6rem; background:#0B2A24;color:#2DD4BF;border:1px solid #14B8A6;">{p['side']}</span>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-        else:
-            st.info("No open positions.")
+                    <div style="font-family:'JetBrains Mono','SF Mono',monospace; color:#8B96A8;">
+                        Qty {p['quantity']:g} @ ₹{p['avg_price']:,.2f}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+    else:
+        st.info("No open positions.")
 
-        st.write("")
-        st.subheader("Trade History (all sessions)")
-        st.caption("Retained and appended across every session rollover, not reset when a new session starts.")
-        trades = get("/trades") or []
-        recent_trades = list(reversed(trades))[-20:]  # chronological, most recent 20
-        if recent_trades:
-            for t in recent_trades:
-                action_color = "#2DD4BF" if t["action"] == "BUY" else "#FB7185"
-                st.markdown(
-                    f"""
-                    <div class="ic-card" style="display:flex; align-items:center; justify-content:space-between;">
-                        <div>
-                            <span style="color:#5B6B84; font-size:0.82rem; font-family:'JetBrains Mono','SF Mono',monospace;">{t['timestamp']}</span>
-                            <span style="color:{action_color}; font-weight:700; margin-left:0.7rem;">{t['action']}</span>
-                            <span style="font-weight:700; color:#F8FAFC; margin-left:0.4rem;">{t['symbol']}</span>
-                        </div>
-                        <div style="font-family:'JetBrains Mono','SF Mono',monospace; color:#8B96A8; font-size:0.88rem;">
-                            Qty {t['quantity']:g} @ ₹{t['price']:,.2f} · costs ₹{t['total_costs']:,.2f}
-                        </div>
+    st.write("")
+    st.markdown("**Trade History (all sessions)**")
+    st.caption("Retained and appended across every session rollover, not reset when a new session starts.")
+    trades = get("/trades") or []
+    recent_trades = list(reversed(trades))[-20:]  # chronological, most recent 20
+    if recent_trades:
+        for t in recent_trades:
+            action_color = "#2DD4BF" if t["action"] == "BUY" else "#FB7185"
+            st.markdown(
+                f"""
+                <div class="ic-card" style="display:flex; align-items:center; justify-content:space-between;">
+                    <div>
+                        <span style="color:#5B6B84; font-size:0.82rem; font-family:'JetBrains Mono','SF Mono',monospace;">{t['timestamp']}</span>
+                        <span style="color:{action_color}; font-weight:700; margin-left:0.7rem;">{t['action']}</span>
+                        <span style="font-weight:700; color:#F8FAFC; margin-left:0.4rem;">{t['symbol']}</span>
                     </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                if t.get("reasoning"):
-                    verdict_txt = f"{t['verdict']} · {t['directional_confidence']:.1f}% directional confidence" if t.get("verdict") else ""
-                    with st.expander(f"Why the committee made this {t['action']} call" + (f" ({verdict_txt})" if verdict_txt else "")):
-                        st.write(t["reasoning"])
-        else:
-            st.markdown('<div class="ic-card">No trades yet this session.</div>', unsafe_allow_html=True)
+                    <div style="font-family:'JetBrains Mono','SF Mono',monospace; color:#8B96A8; font-size:0.88rem;">
+                        Qty {t['quantity']:g} @ ₹{t['price']:,.2f} · costs ₹{t['total_costs']:,.2f}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if t.get("reasoning"):
+                verdict_txt = f"{t['verdict']} · {t['directional_confidence']:.1f}% directional confidence" if t.get("verdict") else ""
+                with st.expander(f"Why the committee made this {t['action']} call" + (f" ({verdict_txt})" if verdict_txt else "")):
+                    st.write(t["reasoning"])
+    else:
+        st.markdown('<div class="ic-card">No trades yet this session.</div>', unsafe_allow_html=True)
+
+    st.divider()
 
     # -------------------------------------------------------------- Planner & Risk
-    with tab_planner:
-        plan = get("/planner/allocation-plan")
+    st.subheader("Planner & Risk")
+    plan = get("/planner/allocation-plan")
 
-        st.subheader("Asset Allocation Caps")
-        a1, a2, a3 = st.columns(3)
-        a1.markdown(metric_card("Risk Tolerance", plan["risk_tolerance"].capitalize()), unsafe_allow_html=True)
-        a2.markdown(metric_card("Per-Symbol Cap", f"₹{plan['symbol_cap_inr']:,.0f}"), unsafe_allow_html=True)
-        a3.markdown(metric_card("Per-Sector Cap", f"₹{plan['sector_cap_inr']:,.0f}"), unsafe_allow_html=True)
-        st.markdown(f'<div class="ic-card">{plan["reasoning"]}</div>', unsafe_allow_html=True)
+    st.markdown("**Asset Allocation Caps**")
+    a1, a2, a3 = st.columns(3)
+    a1.markdown(metric_card("Risk Tolerance", plan["risk_tolerance"].capitalize()), unsafe_allow_html=True)
+    a2.markdown(metric_card("Per-Symbol Cap", f"₹{plan['symbol_cap_inr']:,.0f}"), unsafe_allow_html=True)
+    a3.markdown(metric_card("Per-Sector Cap", f"₹{plan['sector_cap_inr']:,.0f}"), unsafe_allow_html=True)
+    st.markdown(f'<div class="ic-card">{plan["reasoning"]}</div>', unsafe_allow_html=True)
 
-        st.write("")
-        st.subheader("Goal Progress")
-        g1, g2, g3 = st.columns(3)
-        g1.markdown(
-            metric_card("Today's P&L (est.)", f"₹{plan['running_pnl_estimate']:,.2f}", tone=tone_for(plan["running_pnl_estimate"])),
-            unsafe_allow_html=True,
-        )
-        g2.markdown(metric_card("Profit Target", f"+₹{plan['profit_target_inr']:,.0f}"), unsafe_allow_html=True)
-        g3.markdown(metric_card("Loss Limit", f"₹{plan['loss_limit_inr']:,.0f}"), unsafe_allow_html=True)
-        if plan["goal_hit"]:
-            st.warning(f"Session goal reached ({plan['risk_tolerance']} profile) — the Portfolio Manager Agent will not open new positions for the rest of this session. Existing positions still monitored normally.")
-        else:
-            span = plan["profit_target_inr"] - plan["loss_limit_inr"]
-            progress = (plan["running_pnl_estimate"] - plan["loss_limit_inr"]) / span if span else 0.5
-            st.progress(min(max(progress, 0.0), 1.0))
-        st.caption(
-            f"Set via RISK_TOLERANCE in backend/.env. These caps gate every new BUY the Portfolio Manager Agent considers — "
-            "a trade that would breach the symbol/sector cap is sized down or skipped, and once the profit target or loss "
-            "limit is hit, no new positions open for the rest of the session."
-        )
+    st.write("")
+    st.markdown("**Goal Progress**")
+    g1, g2, g3 = st.columns(3)
+    g1.markdown(
+        metric_card("Today's P&L (est.)", f"₹{plan['running_pnl_estimate']:,.2f}", tone=tone_for(plan["running_pnl_estimate"])),
+        unsafe_allow_html=True,
+    )
+    g2.markdown(metric_card("Profit Target", f"+₹{plan['profit_target_inr']:,.0f}"), unsafe_allow_html=True)
+    g3.markdown(metric_card("Loss Limit", f"₹{plan['loss_limit_inr']:,.0f}"), unsafe_allow_html=True)
+    if plan["goal_hit"]:
+        st.warning(f"Session goal reached ({plan['risk_tolerance']} profile) — the Portfolio Manager Agent will not open new positions for the rest of this session. Existing positions still monitored normally.")
+    else:
+        span = plan["profit_target_inr"] - plan["loss_limit_inr"]
+        progress = (plan["running_pnl_estimate"] - plan["loss_limit_inr"]) / span if span else 0.5
+        st.progress(min(max(progress, 0.0), 1.0))
+    st.caption(
+        f"Set via RISK_TOLERANCE in backend/.env. These caps gate every new BUY the Portfolio Manager Agent considers — "
+        "a trade that would breach the symbol/sector cap is sized down or skipped, and once the profit target or loss "
+        "limit is hit, no new positions open for the rest of the session."
+    )
+
+    st.divider()
 
     # -------------------------------------------------------------- Reports
-    with tab_reports:
-        st.subheader("Complete Explainable Trade Log")
-        st.write("Full session summary, every trade, and the complete reasoning behind every decision.")
-        st.caption("Use **Generate PDF** and **Force Close Session** in the Session Control panel on the right.")
-        report_filename = st.session_state.get("dashboard_report_filename")
-        if report_filename:
-            pdf_bytes = get_bytes(f"/reports/download/{report_filename}")
-            if pdf_bytes:
-                st.download_button("Download Last Generated PDF", pdf_bytes, file_name=report_filename, mime="application/pdf")
+    st.subheader("Reports")
+    st.write("Full session summary, every trade, and the complete reasoning behind every decision.")
+    st.caption("Use **Generate PDF** and **Force Close Session** in the Session Control panel on the right.")
+    report_filename = st.session_state.get("dashboard_report_filename")
+    if report_filename:
+        pdf_bytes = get_bytes(f"/reports/download/{report_filename}")
+        if pdf_bytes:
+            st.download_button("Download Last Generated PDF", pdf_bytes, file_name=report_filename, mime="application/pdf")
 
 # ================================================================== RIGHT: session control panel
 with side_col, st.container(border=True):
@@ -271,6 +266,13 @@ with side_col, st.container(border=True):
             f'<span class="ic-mono" style="color:#8B96A8; font-size:0.8rem;">{price_txt}</span>'
             "</div>"
         )
+        if item.get("used_comex_proxy") and item.get("comex_price"):
+            pulse_rows += (
+                '<div style="display:flex; justify-content:flex-end; padding:0 0 0.35rem 0;">'
+                f'<span class="ic-mono" style="color:#93C5FD; font-size:0.72rem;">'
+                f'COMEX {item.get("comex_symbol")} feed: {item["comex_price"]:.2f} (analysis only, NSE closed)</span>'
+                "</div>"
+            )
     if pulse_rows:
         st.markdown(pulse_rows, unsafe_allow_html=True)
     else:

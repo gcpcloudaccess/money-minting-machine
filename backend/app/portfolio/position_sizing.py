@@ -1,5 +1,5 @@
 """Position Sizing Agent: turns a consensus verdict + confidence into a
-concrete order quantity, respecting the ₹10,00,000 paper capital / configured
+concrete order quantity, respecting the ₹1,00,000 paper capital / configured
 leverage cap and scaling exposure with both confidence and the risk regime.
 
 Default configuration (settings.leverage = 1.0) is cash-only, no-margin paper

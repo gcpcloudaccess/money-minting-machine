@@ -240,7 +240,17 @@ def get_market_chart(symbol: str, db: Session = Depends(get_db)) -> dict:
     trade_points = [{"timestamp": t.timestamp.isoformat(), "action": t.action, "price": t.price} for t in trades]
 
     figure = visualization.build_price_chart(symbol, bars, trade_points)
-    return {"symbol": symbol, "latest_price": float(bars["Close"].iloc[-1]), "figure": figure}
+    used_comex_proxy = bool(bars.attrs.get("used_comex_proxy"))
+    return {
+        "symbol": symbol,
+        "latest_price": float(bars["Close"].iloc[-1]),
+        "figure": figure,
+        # Analysis-feed transparency only (see market_data.py module docstring) - this
+        # chart's own "latest_price" already reflects the COMEX read when proxied, these
+        # extra fields just make that visible rather than leaving it silent in the UI.
+        "used_comex_proxy": used_comex_proxy,
+        "source_symbol": bars.attrs.get("source_symbol", symbol) if used_comex_proxy else symbol,
+    }
 
 
 # ---------------------------------------------------------------- watchlist / search
@@ -253,12 +263,32 @@ def get_watchlist(db: Session = Depends(get_db)) -> list[dict]:
             price = _search_provider.get_latest_price(symbol)
         except Exception:
             price = None
+
+        # Analysis-feed transparency only - never feeds price/P&L above. When
+        # NSE is shut and this symbol has a COMEX proxy (see market_data.py),
+        # surface that fallback price separately so it's visible on the
+        # dashboard instead of silently only affecting agent narratives.
+        used_comex_proxy = False
+        comex_price = None
+        comex_symbol = None
+        try:
+            proxy_bars = _search_provider.get_recent_bars(symbol, lookback_bars=1)
+            if bool(proxy_bars.attrs.get("used_comex_proxy")) and not proxy_bars.empty:
+                used_comex_proxy = True
+                comex_symbol = proxy_bars.attrs.get("source_symbol")
+                comex_price = float(proxy_bars["Close"].iloc[-1])
+        except Exception:
+            pass
+
         out.append({
             "symbol": symbol, "price": price,
             "latest_verdict": latest.verdict if latest else None,
             "latest_confidence": latest.directional_confidence if latest else None,
             "latest_decision_id": latest.id if latest else None,
             "latest_timestamp": latest.timestamp.isoformat() if latest else None,
+            "used_comex_proxy": used_comex_proxy,
+            "comex_symbol": comex_symbol,
+            "comex_price": comex_price,
         })
     return out
 
