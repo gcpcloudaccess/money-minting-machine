@@ -1,12 +1,12 @@
 import plotly.graph_objects as go
 import streamlit as st
 
-from api_client import get, get_bytes, post
+from api_client import get, post
 from theme import inject_base_css, metric_card, page_header, tone_for, verdict_badge
 
-st.set_page_config(page_title="Investment Committee", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Money Minting Machine", page_icon="📊", layout="wide")
 inject_base_css()
-page_header("📊", "Autonomous Multi-Agent Investment Committee", "Intraday NSE paper trading — explainable, trust-weighted multi-agent consensus")
+page_header("📊", "Money Minting Machine", "Intraday NSE paper trading — explainable, trust-weighted multi-agent consensus")
 
 app_settings = get("/settings")
 tick_status = get("/session/tick-status")
@@ -72,19 +72,7 @@ with main_col:
 
     st.divider()
 
-    # -------------------------------------------------------------- session output
-    is_closed = portfolio["status"] != "active"
-    output_title = "FINAL SYSTEM OUTPUT — AT MARKET CLOSE" if is_closed else "LIVE SYSTEM OUTPUT — SESSION IN PROGRESS"
-    st.markdown(
-        f"""
-        <div class="ic-card" style="background:linear-gradient(135deg,#101827 0%,#0A0F1C 100%); text-align:center;
-             font-weight:700; color:#F8FAFC; letter-spacing:0.06em; padding:0.7rem; font-size:0.85rem;">
-            {output_title}
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+    # -------------------------------------------------------------- session summary
     f1, f2, f3, f4 = st.columns(4)
     f1.markdown(metric_card("Final Portfolio Value", f"₹{portfolio['total_value']:,.2f}", tone=tone_for(portfolio["net_profit"])), unsafe_allow_html=True)
     f2.markdown(
@@ -98,12 +86,40 @@ with main_col:
     )
 
     st.write("")
-    st.subheader("Portfolio Growth Curve")
-    eq = get("/portfolio/equity-curve")
-    if eq["figure"]["data"]:
-        st.plotly_chart(go.Figure(eq["figure"]), width="stretch", config={"displayModeBar": False})
+    st.subheader("Committee Recommendations")
+    st.caption("Latest verdict from the multi-agent committee for each watchlisted symbol.")
+    recommendations = get("/watchlist", silent=True) or []
+    no_decision_badge = '<span class="ic-badge" style="background:#161B27;color:#5B6B84;border:1px solid #2A3140;">NO DECISION YET</span>'
+    if recommendations:
+        for item in recommendations:
+            verdict = item.get("latest_verdict")
+            badge_html = verdict_badge(verdict) if verdict else no_decision_badge
+            conf_txt = f"{item['latest_confidence']:.1f}% directional confidence" if item.get("latest_confidence") is not None else "awaiting first tick"
+            ts_txt = item.get("latest_timestamp") or ""
+            price_txt = f"₹{item['price']:,.2f}" if item.get("price") else "—"
+            st.markdown(
+                f"""
+                <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center;">
+                    <div>
+                        <span style="font-weight:700; color:#F8FAFC; font-size:1.05rem;">{item['symbol']}</span>
+                        <span style="margin-left:0.6rem;">{badge_html}</span>
+                    </div>
+                    <div style="font-family:'JetBrains Mono','SF Mono',monospace; color:#8B96A8; font-size:0.85rem; text-align:right;">
+                        {price_txt} · {conf_txt}<br><span style="font-size:0.72rem; color:#5B6B84;">{ts_txt}</span>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            if item.get("used_comex_proxy") and item.get("comex_price"):
+                st.caption(f"NSE closed — analysis fed by COMEX {item.get('comex_symbol')} at {item['comex_price']:.2f} (feed only, not tradable).")
+            if item.get("latest_decision_id"):
+                decision = get(f"/decisions/{item['latest_decision_id']}", silent=True)
+                if decision and decision.get("consensus_reasoning"):
+                    with st.expander(f"Why the committee's latest call on {item['symbol']}" + (f" ({verdict})" if verdict else "")):
+                        st.write(decision["consensus_reasoning"])
     else:
-        st.info("No trades yet this session — equity curve will populate once the committee executes trades.")
+        st.info("No recommendations yet — run a tick to get the committee's first read.")
 
     st.divider()
 
@@ -159,52 +175,6 @@ with main_col:
     else:
         st.markdown('<div class="ic-card">No trades yet this session.</div>', unsafe_allow_html=True)
 
-    st.divider()
-
-    # -------------------------------------------------------------- Planner & Risk
-    st.subheader("Planner & Risk")
-    plan = get("/planner/allocation-plan")
-
-    st.markdown("**Asset Allocation Caps**")
-    a1, a2, a3 = st.columns(3)
-    a1.markdown(metric_card("Risk Tolerance", plan["risk_tolerance"].capitalize()), unsafe_allow_html=True)
-    a2.markdown(metric_card("Per-Symbol Cap", f"₹{plan['symbol_cap_inr']:,.0f}"), unsafe_allow_html=True)
-    a3.markdown(metric_card("Per-Sector Cap", f"₹{plan['sector_cap_inr']:,.0f}"), unsafe_allow_html=True)
-    st.markdown(f'<div class="ic-card">{plan["reasoning"]}</div>', unsafe_allow_html=True)
-
-    st.write("")
-    st.markdown("**Goal Progress**")
-    g1, g2, g3 = st.columns(3)
-    g1.markdown(
-        metric_card("Today's P&L (est.)", f"₹{plan['running_pnl_estimate']:,.2f}", tone=tone_for(plan["running_pnl_estimate"])),
-        unsafe_allow_html=True,
-    )
-    g2.markdown(metric_card("Profit Target", f"+₹{plan['profit_target_inr']:,.0f}"), unsafe_allow_html=True)
-    g3.markdown(metric_card("Loss Limit", f"₹{plan['loss_limit_inr']:,.0f}"), unsafe_allow_html=True)
-    if plan["goal_hit"]:
-        st.warning(f"Session goal reached ({plan['risk_tolerance']} profile) — the Portfolio Manager Agent will not open new positions for the rest of this session. Existing positions still monitored normally.")
-    else:
-        span = plan["profit_target_inr"] - plan["loss_limit_inr"]
-        progress = (plan["running_pnl_estimate"] - plan["loss_limit_inr"]) / span if span else 0.5
-        st.progress(min(max(progress, 0.0), 1.0))
-    st.caption(
-        f"Set via RISK_TOLERANCE in backend/.env. These caps gate every new BUY the Portfolio Manager Agent considers — "
-        "a trade that would breach the symbol/sector cap is sized down or skipped, and once the profit target or loss "
-        "limit is hit, no new positions open for the rest of the session."
-    )
-
-    st.divider()
-
-    # -------------------------------------------------------------- Reports
-    st.subheader("Reports")
-    st.write("Full session summary, every trade, and the complete reasoning behind every decision.")
-    st.caption("Use **Generate PDF** and **Force Close Session** in the Session Control panel on the right.")
-    report_filename = st.session_state.get("dashboard_report_filename")
-    if report_filename:
-        pdf_bytes = get_bytes(f"/reports/download/{report_filename}")
-        if pdf_bytes:
-            st.download_button("Download Last Generated PDF", pdf_bytes, file_name=report_filename, mime="application/pdf")
-
 # ================================================================== RIGHT: session control panel
 with side_col, st.container(border=True):
     st.markdown('<div class="ic-panel-title">Auto-Trading</div>', unsafe_allow_html=True)
@@ -239,18 +209,6 @@ with side_col, st.container(border=True):
     with rc2:
         if st.button("Refresh", width="stretch"):
             st.rerun()
-
-    st.markdown('<div class="ic-panel-title">Reports</div>', unsafe_allow_html=True)
-    if st.button("Generate PDF", width="stretch"):
-        with st.spinner("Generating PDF..."):
-            result = post("/reports/generate")
-        st.session_state["dashboard_report_filename"] = result["filename"]
-        st.rerun()
-    report_filename = st.session_state.get("dashboard_report_filename")
-    if report_filename:
-        pdf_bytes = get_bytes(f"/reports/download/{report_filename}")
-        if pdf_bytes:
-            st.download_button("Download PDF", pdf_bytes, file_name=report_filename, mime="application/pdf", width="stretch")
 
     st.markdown('<div class="ic-panel-title">Watchlist Pulse</div>', unsafe_allow_html=True)
     pulse = get("/watchlist", silent=True) or []
