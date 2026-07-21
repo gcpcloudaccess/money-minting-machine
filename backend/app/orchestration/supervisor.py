@@ -90,6 +90,18 @@ def run_committee_for_symbol(
     except Exception:
         benchmark_bars = None
 
+    # Transparency note for the COMEX gold/silver analysis-feed fallback (see
+    # app/data/market_data.py) - NSE is closed, so this tick's technical/algo
+    # read is coming from COMEX futures rather than the NSE ETF itself. No
+    # trade executes from this regardless (see session_runner.py); it only
+    # keeps Stock Search / the Dashboard producing a live, moving analysis.
+    data_source_note = ""
+    if getattr(bars, "attrs", {}).get("used_comex_proxy"):
+        data_source_note = (
+            f"NSE is currently closed - this read uses COMEX futures ({bars.attrs.get('source_symbol')}) "
+            f"as a live analysis-feed proxy for {symbol}. No trade can execute until NSE reopens."
+        )
+
     fundamentals = fundamentals_data.get_fundamentals(symbol)
     company_query = fundamentals.get("short_name") or symbol.split(".")[0]
     symbol_news = news_data.fetch_symbol_news(company_query)
@@ -214,4 +226,5 @@ def run_committee_for_symbol(
         "execution": execution_result,
         "alerts": alerts,
         "decision_id": decision_row.id,
+        "data_source_note": data_source_note,
     }

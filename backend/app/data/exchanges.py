@@ -1,18 +1,22 @@
 """Exchange registry: NSE only.
 
 This build is scoped to the Indian market exclusively - the tradable universe
-is the Nifty 50 index (via NIFTYBEES.NS) plus MCX gold/silver, tracked through
-their NSE-listed ETF proxies (GOLDBEES.NS / SILVERBEES.NS) since yfinance -
-this app's only data source - doesn't carry live MCX commodity futures data.
-Using the NSE-listed ETFs keeps every instrument genuinely on a single
-exchange with real, working real-time data, rather than mixing in a second
-exchange (MCX) or a non-Indian proxy (COMEX futures) for the commodity leg.
+is the Nifty 50 index itself (^NSEI - yfinance has no NSE Nifty *futures*
+contract data at all, only the spot index and NSE cash-market/ETF symbols, so
+this is a paper-trading abstraction: "buying" ^NSEI means a synthetic
+notional position sized in index points, not a real placeable order - fine
+here since nothing is ever actually executed on a real exchange) plus MCX
+gold/silver, tracked through their NSE-listed ETF proxies (GOLDBEES.NS /
+SILVERBEES.NS) since yfinance doesn't carry live MCX commodity futures data
+either. The gold/silver ETFs stay genuinely tradable NSE instruments; only
+the Nifty leg is a deliberate simulation-only exception, per explicit choice
+over the NIFTYBEES.NS ETF alternative.
 
 Each Exchange knows its own trading hours (in its own local timezone, so DST
 is handled correctly via zoneinfo - the same style as market_data.py's
 NSE-only is_market_open()/minutes_to_close()), its currency (for the FX
 conversion in app/data/fx.py, always a no-op at INR here), and its default
-watchlist already suffixed the way yfinance expects (.NS)."""
+watchlist."""
 
 from __future__ import annotations
 
@@ -52,10 +56,11 @@ NSE = Exchange(
     code="NSE", label="India (NSE)", tz=ZoneInfo("Asia/Kolkata"),
     open_time=dt.time(9, 15), close_time=dt.time(15, 30), currency="INR", suffix=".NS",
     benchmark_symbol="^NSEI",
-    # Scoped down (2026-07-21) to exactly the 3 instruments the app is meant to trade:
-    # the Nifty 50 index (via its NIFTYBEES.NS ETF - an index itself isn't directly
-    # tradable) and MCX gold/silver via their NSE-listed ETF proxies.
-    watchlist=("NIFTYBEES.NS", "GOLDBEES.NS", "SILVERBEES.NS"),
+    # Scoped down (2026-07-21) to exactly the 3 instruments the app is meant to
+    # trade: the Nifty 50 index directly (^NSEI - see module docstring for why
+    # this is a synthetic paper-only position rather than a real futures
+    # contract) and MCX gold/silver via their NSE-listed ETF proxies.
+    watchlist=("^NSEI", "GOLDBEES.NS", "SILVERBEES.NS"),
 )
 
 # Single-exchange registry - kept as a tuple/dict-keyed lookup (rather than

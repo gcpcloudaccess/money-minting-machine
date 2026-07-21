@@ -23,10 +23,11 @@ class Settings(BaseSettings):
     session_hours: float = 4.0
     tick_minutes: int = 10
     # Scoped to an India-only, single-exchange universe: the Nifty 50 index
-    # (via its NIFTYBEES.NS ETF) plus MCX gold/silver via their NSE-listed ETF
-    # proxies (GOLDBEES.NS / SILVERBEES.NS) - see app/data/exchanges.py for why
-    # the ETF proxies are used instead of raw MCX contracts.
-    watchlist: str = "NIFTYBEES.NS,GOLDBEES.NS,SILVERBEES.NS"
+    # directly (^NSEI - yfinance has no NSE Nifty futures data, so this is a
+    # synthetic paper-only position, not a real placeable order) plus MCX
+    # gold/silver via their NSE-listed ETF proxies (GOLDBEES.NS / SILVERBEES.NS)
+    # - see app/data/exchanges.py for the full rationale on both.
+    watchlist: str = "^NSEI,GOLDBEES.NS,SILVERBEES.NS"
 
     # This build only supports NSE (see app/data/exchanges.py) - kept as a
     # setting rather than hardcoded so the session runner's live/replay branch

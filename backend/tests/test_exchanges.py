@@ -29,8 +29,10 @@ def test_nse_closed_before_open_and_after_close():
 
 def test_infer_exchange_from_symbol_suffix_and_fallback():
     assert ex.infer_exchange_from_symbol("RELIANCE.NS").code == "NSE"
-    assert ex.infer_exchange_from_symbol("NIFTYBEES.NS").code == "NSE"
-    # No suffix - this build only supports NSE, so it still resolves there.
+    assert ex.infer_exchange_from_symbol("GOLDBEES.NS").code == "NSE"
+    # No suffix (e.g. the ^NSEI index symbol, or a bare foreign ticker) - this
+    # build only supports NSE, so it still resolves there.
+    assert ex.infer_exchange_from_symbol("^NSEI").code == "NSE"
     assert ex.infer_exchange_from_symbol("AAPL").code == "NSE"
 
 
@@ -39,5 +41,5 @@ def test_only_nse_is_registered():
     assert ex.NSE.currency == "INR"
 
 
-def test_default_watchlist_is_nifty_and_mcx_gold_silver_proxies():
-    assert ex.NSE.watchlist == ("NIFTYBEES.NS", "GOLDBEES.NS", "SILVERBEES.NS")
+def test_default_watchlist_is_nifty_spot_and_mcx_gold_silver_proxies():
+    assert ex.NSE.watchlist == ("^NSEI", "GOLDBEES.NS", "SILVERBEES.NS")

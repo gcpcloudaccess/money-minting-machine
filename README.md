@@ -1,6 +1,6 @@
 # Autonomous Multi-Agent Investment Committee
 
-Autonomous multi-agent committee that paper-trades NSE intraday: an India-only, single-exchange universe (Nifty 50 via `NIFTYBEES.NS`, plus MCX gold/silver via their NSE-listed ETF proxies `GOLDBEES.NS`/`SILVERBEES.NS`). Starts with ₹10,00,000 virtual capital, cash-only (no margin), runs a 4–6 hour session, and autonomously decides BUY / SELL / HOLD / WAIT / SWITCH per symbol using a **trust-weighted, directional-confidence-aware consensus** across 9 analyst agents and a 4-critic debate loop — never simple majority voting or plain confidence averaging.
+Autonomous multi-agent committee that paper-trades NSE intraday: an India-only, single-exchange universe (Nifty 50 spot index `^NSEI` — yfinance has no NSE Nifty futures data, so this is a synthetic paper-only position, not a real placeable order — plus MCX gold/silver via their NSE-listed ETF proxies `GOLDBEES.NS`/`SILVERBEES.NS`, with a COMEX gold/silver futures fallback for the analysis feed only while NSE is closed, see `app/data/market_data.py`). Starts with ₹10,00,000 virtual capital, cash-only (no margin), runs a 4–6 hour session, and autonomously decides BUY / SELL / HOLD / WAIT / SWITCH per symbol using a **trust-weighted, directional-confidence-aware consensus** across 9 analyst agents and a 4-critic debate loop — never simple majority voting or plain confidence averaging.
 
 This build targets a **hackathon-friendly, zero-Docker setup**: everything runs with just a Python virtualenv (Python 3.14 verified) and two local processes (FastAPI backend + Streamlit frontend). See [Architecture mapping](#architecture-mapping-diagram--this-build) for how each diagrammed component was implemented.
 
@@ -24,7 +24,7 @@ cp backend/.env.example backend/.env
 # -> http://localhost:8501
 ```
 
-**Without an LLM key**, the app still runs fully — all indicator math, the consensus algorithm, position sizing, execution, and costs are pure Python and key-independent. Only the natural-language reasoning text degrades to a deterministic templated summary instead of an LLM-generated narrative. The Settings page and Dashboard both surface a warning if no key is configured.
+**Without an LLM key**, the app still runs fully — all indicator math, the consensus algorithm, position sizing, execution, and costs are pure Python and key-independent. Only the natural-language reasoning text degrades to a deterministic templated summary instead of an LLM-generated narrative. The Dashboard surfaces a warning banner if no key is configured.
 **Local LLM** We are using local LLMs using Ollama using the class app/llm/local_llm.py, just need to replace it with the live LLMs using the function get_local_llm_client along with the model name.
 
 ### Data mode
@@ -35,9 +35,8 @@ cp backend/.env.example backend/.env
 ### Running a session
 
 - The backend auto-ticks every `TICK_MINUTES` (default 10) via APScheduler once started.
-- For a live demo, use the Dashboard's **"Run Tick Now"** button to trigger a tick on demand instead of waiting.
-- **Stock Search** runs the full committee for any symbol as a preview (no trade executed).
-- The session auto-closes (force-closing all positions + generating the PDF trade log) when replay data is exhausted, or near NSE close in live mode. You can also force it early from the Dashboard ("Force Close Session Now") or `POST /session/close`.
+- For a live demo, use the Dashboard's **"Run Tick"** button to trigger a tick on demand instead of waiting.
+- The session auto-closes (force-closing all positions + generating the PDF trade log) when replay data is exhausted, or near NSE close in live mode. You can also force it early from the Dashboard ("Force Close Session") or `POST /session/close`.
 
 ### Tests
 
@@ -61,7 +60,7 @@ Covers the mandatory consensus algorithm (proves it is *not* majority voting / p
 | Memory & Knowledge (PostgreSQL/PGVector/Redis) | SQLite via SQLAlchemy (`DATABASE_URL` swappable for Postgres later); decision/vote history queried directly (no vector store dependency); no separate cache layer (single process) |
 | Monitoring & Governance (Prometheus/Grafana/LangSmith/Auth0) | Structured logging + `AuditLog` DB table only — not built; noted here as the production upgrade path |
 | External Integrations (Broker APIs) | Simulated execution engine (`app/trading/execution_engine.py`) with a realistic Indian intraday cost model (`app/trading/costs.py`: brokerage, STT, exchange charges, SEBI charges, stamp duty, GST) — no live broker, this is paper trading |
-| User Interface | Streamlit, 6 pages under `frontend/pages/`: Dashboard, Watchlist, Stock Search, Committee Meetings, Reports & Logs, Settings |
+| User Interface | Streamlit, single-page dashboard (`frontend/Home.py`) — portfolio KPIs, price chart, Overview/Positions & Trades/Planner & Risk/Reports tabs, and a session-control side panel (auto-trading toggle, PDF report, watchlist pulse, force-close) |
 
 ### The mandatory consensus algorithm
 
