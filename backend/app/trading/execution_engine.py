@@ -50,11 +50,9 @@ def open_position(
     db: Session, portfolio: Portfolio, symbol: str, side: str, quantity: float, price: float, decision_id: int | None,
     exchange: str = "NSE", currency: str = "INR", price_local: float | None = None, fx_rate_to_inr: float = 1.0,
 ) -> Trade:
-    """`price` is always the INR-equivalent price (the caller - supervisor.py -
-    already applied the FX conversion via app/data/fx.py before position sizing
-    ran), so every downstream cash/exposure/P&L number stays in one currency
-    exactly as before. `price_local`/`currency`/`fx_rate_to_inr` are stored
-    purely for explainability (showing the original local-currency fill)."""
+    """`price` is always in INR (NSE-only, INR-only build - no FX conversion
+    needed). `price_local`/`currency`/`fx_rate_to_inr` are kept as fields
+    purely for schema stability, always price/"INR"/1.0 in this build."""
     action = "BUY" if side == "LONG" else "SELL"
     costs = compute_costs(action, quantity, price, exchange=exchange, fx_rate_to_inr=fx_rate_to_inr)
     gross = quantity * price

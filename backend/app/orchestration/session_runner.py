@@ -1,18 +1,11 @@
 """Session Runner: the market-hours (or replay) tick loop.
 
-In live mode, every tick first asks app/data/exchanges.py which of
-NSE/SGX/LSE/NYSE is currently open (there is only ever one active market at a
-time by design) and trades that one. When the active session's exchange no
-longer matches the one that's currently open - NSE closed for the day, SGX
-just opened - the old session is force-closed on its own market's last known
-prices exactly like an ordinary end-of-day close, and a fresh session starts
-immediately on the newly-open exchange. If all 4 are closed (the daily dead
-zone between US close and NSE open), the tick is a no-op, same as today's
-single-exchange behavior.
-
-Each tick, the Investment Planner picks which symbols to run, the supervisor
-runs the full committee pipeline per symbol, and positions are force-closed
-once the session ends (real market close, or replay data exhausted)."""
+This build trades NSE only (see app/data/exchanges.py). In live mode, every
+tick asks the exchange registry whether NSE is currently open; outside NSE
+hours the tick is a no-op. Each tick, the Investment Planner picks which
+symbols to run, the supervisor runs the full committee pipeline per symbol,
+and positions are force-closed once the session ends (real market close, or
+replay data exhausted)."""
 
 from __future__ import annotations
 
@@ -20,7 +13,7 @@ import logging
 
 from app.agents.planner import InvestmentPlanner
 from app.config import get_settings
-from app.data import exchanges, fx
+from app.data import exchanges
 from app.data.exchanges import Exchange
 from app.data.market_data import MarketDataProvider
 from app.db.models import Position, utcnow
@@ -98,14 +91,12 @@ class SessionRunner:
             db.close()
 
     def _close_session(self, db, portfolio, watchlist: list[str]) -> None:
-        # force_close_all needs INR-equivalent prices, same as every other price
-        # that enters the ledger - get_latest_price() returns the exchange's own
-        # local currency, so convert it here just like the regular tick path does.
-        fx_rate = fx.get_fx_rate(exchanges.get_exchange(portfolio.exchange).currency)
+        # NSE-only, INR-only build - get_latest_price() is already INR, no
+        # conversion needed.
         price_lookup = {}
         for s in watchlist:
             try:
-                price_lookup[s] = self.provider.get_latest_price(s) * fx_rate
+                price_lookup[s] = self.provider.get_latest_price(s)
             except Exception:
                 continue
 

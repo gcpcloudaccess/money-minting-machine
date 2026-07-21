@@ -20,7 +20,7 @@ class Portfolio(Base):
     starting_capital: Mapped[float] = mapped_column(Float)
     leverage: Mapped[float] = mapped_column(Float)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | closed
-    exchange: Mapped[str] = mapped_column(String(16), default="NSE")  # NSE | SGX | LSE | NYSE - which market this session trades
+    exchange: Mapped[str] = mapped_column(String(16), default="NSE")  # NSE only in this build - which market this session trades
     session_start: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     session_end: Mapped[dt.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

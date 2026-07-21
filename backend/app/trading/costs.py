@@ -1,43 +1,26 @@
-"""Intraday equity cost models, one per supported exchange (NSE/SGX/LSE/NYSE).
+"""Intraday cost model for NSE (the only exchange this build trades).
 
-Rates approximate a typical discount-broker charge schedule for each market
-- not authoritative fee schedules, same spirit as the original NSE-only model
-("realistic enough that net profit after costs is a real, defensible number,
-not a stub"). All 7 output fields are kept across every exchange for a stable
-schema even though what each field represents shifts per market (e.g. NYSE's
-near-zero commission has nothing in "stamp_duty", LSE's does).
+Rates approximate a typical Zerodha-style Indian discount-broker charge
+schedule - not an authoritative fee schedule, but realistic enough that net
+profit after costs is a real, defensible number, not a stub.
 
 Percentage-based rates are applied directly against price_inr * quantity
 (the caller has already converted the local-currency price to INR-equivalent
-- see app/data/fx.py), since a percentage of turnover is currency-agnostic.
-Flat local-currency fees (e.g. NSE's Rs 20 brokerage cap, LSE's flat GBP
-commission) are converted to INR via fx_rate_to_inr at call time.
+- see app/data/fx.py; for NSE that conversion is always a 1.0 no-op since the
+exchange's currency is already INR). Flat local-currency fees (NSE's Rs 20
+brokerage cap) are converted to INR via fx_rate_to_inr at call time, which is
+always 1.0 here for the same reason.
 """
 
 from __future__ import annotations
 
-# Each profile's rates are percentages of turnover (currency-agnostic) plus
-# any flat component expressed in the EXCHANGE's own local currency.
+# Rates are percentages of turnover (currency-agnostic) plus a flat component
+# expressed in the exchange's own local currency (INR, for NSE).
 COST_PROFILES = {
     "NSE": {  # Zerodha-style Indian discount broker
         "brokerage_rate": 0.0003, "brokerage_cap_local": 20.0,
         "stt_sell_rate": 0.00025, "exchange_txn_rate": 0.0000297,
         "sebi_rate": 0.0000001, "stamp_duty_buy_rate": 0.00003, "gst_rate": 0.18,
-    },
-    "SGX": {  # SGX clearing + trading fee, Singapore GST on the fees (not turnover)
-        "brokerage_rate": 0.0, "brokerage_cap_local": None,
-        "stt_sell_rate": 0.0, "exchange_txn_rate": 0.0004,
-        "sebi_rate": 0.0, "stamp_duty_buy_rate": 0.0, "gst_rate": 0.09,
-    },
-    "LSE": {  # flat commission + UK Stamp Duty Reserve Tax (buy-side only)
-        "brokerage_rate": 0.0, "brokerage_cap_local": None, "brokerage_flat_local": 3.0,
-        "stt_sell_rate": 0.0, "exchange_txn_rate": 0.0,
-        "sebi_rate": 0.0, "stamp_duty_buy_rate": 0.005, "gst_rate": 0.0,
-    },
-    "NYSE": {  # commission-free like modern US brokers, tiny SEC/FINRA sell-side fees
-        "brokerage_rate": 0.0, "brokerage_cap_local": None,
-        "stt_sell_rate": 0.0000278, "exchange_txn_rate": 0.0,
-        "sebi_rate": 0.0, "stamp_duty_buy_rate": 0.0, "gst_rate": 0.0,
     },
 }
 

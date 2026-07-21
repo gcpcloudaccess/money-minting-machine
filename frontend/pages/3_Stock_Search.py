@@ -8,11 +8,11 @@ inject_base_css()
 page_header("🔍", "Stock Search", "Run the full investment committee on any NSE symbol on demand — preview only, no trade is executed")
 
 settings = get("/settings")
-default_symbol = settings["watchlist"][0] if settings["watchlist"] else "RELIANCE.NS"
+default_symbol = settings["watchlist"][0] if settings["watchlist"] else "NIFTYBEES.NS"
 
 col1, col2 = st.columns([3, 1])
 with col1:
-    symbol = st.text_input("NSE symbol (e.g. RELIANCE.NS, TCS.NS, INFY.NS)", value=default_symbol)
+    symbol = st.text_input("NSE symbol (e.g. NIFTYBEES.NS, GOLDBEES.NS, SILVERBEES.NS)", value=default_symbol)
 with col2:
     st.write("")
     st.write("")

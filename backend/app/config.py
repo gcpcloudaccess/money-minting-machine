@@ -18,20 +18,19 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./investment_committee.db"
 
-    starting_capital_inr: float = 10_000.0
-    leverage: float = 2.0
+    starting_capital_inr: float = 1_000_000.0  # ₹10 lac paper capital
+    leverage: float = 1.0  # no margin - cash-only paper trading
     session_hours: float = 4.0
     tick_minutes: int = 10
-    watchlist: str = (
-        "RELIANCE.NS,TCS.NS,HDFCBANK.NS,INFY.NS,ICICIBANK.NS,LT.NS,SBIN.NS,ITC.NS,"
-        "BHARTIARTL.NS,AXISBANK.NS,KOTAKBANK.NS,MARUTI.NS,SUNPHARMA.NS,TITAN.NS,"
-        "ASIANPAINT.NS,BAJFINANCE.NS,HCLTECH.NS,WIPRO.NS"
-    )
+    # Scoped to an India-only, single-exchange universe: the Nifty 50 index
+    # (via its NIFTYBEES.NS ETF) plus MCX gold/silver via their NSE-listed ETF
+    # proxies (GOLDBEES.NS / SILVERBEES.NS) - see app/data/exchanges.py for why
+    # the ETF proxies are used instead of raw MCX contracts.
+    watchlist: str = "NIFTYBEES.NS,GOLDBEES.NS,SILVERBEES.NS"
 
-    # In live mode, the session runner automatically trades whichever of NSE/SGX/LSE/NYSE
-    # is currently open (see app/data/exchanges.py) and rolls over to the next one as
-    # markets close - "replay" mode always demos a single exchange regardless of the
-    # clock, so this only selects which one for replay/demo purposes.
+    # This build only supports NSE (see app/data/exchanges.py) - kept as a
+    # setting rather than hardcoded so the session runner's live/replay branch
+    # doesn't need special-casing.
     replay_exchange: str = "NSE"
 
     # Drives the Investment Planner's asset-allocation caps and profit/loss goals

@@ -1,13 +1,18 @@
-"""Multi-exchange registry: lets the committee trade whichever of NSE, SGX,
-LSE, or NYSE/NASDAQ is currently open, one at a time, and automatically move
-on to the next open market as the day rolls around - rather than the system
-sitting idle once NSE closes for the day.
+"""Exchange registry: NSE only.
+
+This build is scoped to the Indian market exclusively - the tradable universe
+is the Nifty 50 index (via NIFTYBEES.NS) plus MCX gold/silver, tracked through
+their NSE-listed ETF proxies (GOLDBEES.NS / SILVERBEES.NS) since yfinance -
+this app's only data source - doesn't carry live MCX commodity futures data.
+Using the NSE-listed ETFs keeps every instrument genuinely on a single
+exchange with real, working real-time data, rather than mixing in a second
+exchange (MCX) or a non-Indian proxy (COMEX futures) for the commodity leg.
 
 Each Exchange knows its own trading hours (in its own local timezone, so DST
 is handled correctly via zoneinfo - the same style as market_data.py's
 NSE-only is_market_open()/minutes_to_close()), its currency (for the FX
-conversion in app/data/fx.py), and a small default watchlist already suffixed
-the way yfinance expects for that market."""
+conversion in app/data/fx.py, always a no-op at INR here), and its default
+watchlist already suffixed the way yfinance expects (.NS)."""
 
 from __future__ import annotations
 
@@ -47,56 +52,16 @@ NSE = Exchange(
     code="NSE", label="India (NSE)", tz=ZoneInfo("Asia/Kolkata"),
     open_time=dt.time(9, 15), close_time=dt.time(15, 30), currency="INR", suffix=".NS",
     benchmark_symbol="^NSEI",
-    # Widened from the original 8 (2026-07-09) - the Investment Planner still only
-    # analyzes up to 4 symbols/tick (settings.max_parallel_agents-bounded), so this
-    # doesn't raise per-tick LLM cost; it raises the odds that *some* symbol in the
-    # day's rotation clears the decisive threshold instead of the same 8 repeatedly
-    # landing HOLD together.
-    watchlist=(
-        "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS", "LT.NS", "SBIN.NS", "ITC.NS",
-        "BHARTIARTL.NS", "AXISBANK.NS", "KOTAKBANK.NS", "MARUTI.NS", "SUNPHARMA.NS", "TITAN.NS", "ASIANPAINT.NS",
-        "BAJFINANCE.NS", "HCLTECH.NS", "WIPRO.NS",
-    ),
-)
-SGX = Exchange(
-    # 08:00 rather than the exchange's 09:00 core-session open - a realistic
-    # pre-open/pre-market window (SGX itself runs a pre-open auction before
-    # the continuous session) that also happens to close the one remaining
-    # gap left after extending NYSE below - see the coverage note further down.
-    code="SGX", label="Singapore (SGX)", tz=ZoneInfo("Asia/Singapore"),
-    open_time=dt.time(8, 0), close_time=dt.time(17, 0), currency="SGD", suffix=".SI",
-    benchmark_symbol="^STI",
-    watchlist=("D05.SI", "O39.SI", "U11.SI", "Z74.SI"),
-)
-LSE = Exchange(
-    code="LSE", label="London (LSE)", tz=ZoneInfo("Europe/London"),
-    open_time=dt.time(8, 0), close_time=dt.time(16, 30), currency="GBP", suffix=".L",
-    benchmark_symbol="^FTSE",
-    watchlist=("HSBA.L", "BP.L", "AZN.L", "ULVR.L"),
-)
-NYSE = Exchange(
-    # 04:00-20:00 ET (not just the 09:30-16:00 core session) - genuine
-    # pre-market and after-hours trading windows most US brokers (and the
-    # ECNs behind them) actually support, not an invented extension. This is
-    # also what closes the round-the-clock gap: see the coverage note below.
-    code="NYSE", label="United States (NYSE/NASDAQ, incl. pre/post-market)", tz=ZoneInfo("America/New_York"),
-    open_time=dt.time(4, 0), close_time=dt.time(20, 0), currency="USD", suffix="",
-    benchmark_symbol="^GSPC",
-    watchlist=("AAPL", "MSFT", "AMZN", "JPM"),
+    # Scoped down (2026-07-21) to exactly the 3 instruments the app is meant to trade:
+    # the Nifty 50 index (via its NIFTYBEES.NS ETF - an index itself isn't directly
+    # tradable) and MCX gold/silver via their NSE-listed ETF proxies.
+    watchlist=("NIFTYBEES.NS", "GOLDBEES.NS", "SILVERBEES.NS"),
 )
 
-# Priority order when more than one exchange is open at once (e.g. NSE and LSE
-# overlap ~7:00-10:00 UTC in northern-hemisphere winter) - only one exchange
-# trades at a time, so ties break in this order.
-#
-# Coverage note: with SGX's pre-open at 08:00 SGT and NYSE's pre/post-market
-# window (04:00-20:00 ET), these 4 exchanges' local hours - converted to UTC -
-# chain together with no gap across all seasons (checked against both DST
-# regimes): SGX/NSE cover ~00:00-10:00 UTC, LSE picks up ~07:00-15:30 UTC,
-# NYSE's extended window covers ~08:00-00:00 UTC (EDT) / ~09:00-01:00 UTC
-# (EST), looping back around to SGX's next-day open. At least one of the 4 is
-# always open - see test_exchanges.py::test_no_gap_across_a_full_24_hour_cycle.
-ALL_EXCHANGES: tuple[Exchange, ...] = (NSE, SGX, LSE, NYSE)
+# Single-exchange registry - kept as a tuple/dict-keyed lookup (rather than
+# collapsing straight to the NSE constant) so callers that iterate
+# ALL_EXCHANGES or look up by code don't need special-casing.
+ALL_EXCHANGES: tuple[Exchange, ...] = (NSE,)
 _BY_CODE = {ex.code: ex for ex in ALL_EXCHANGES}
 
 _SUFFIX_TO_EXCHANGE = {ex.suffix: ex for ex in ALL_EXCHANGES if ex.suffix}
@@ -114,10 +79,10 @@ def get_open_exchange(now: dt.datetime | None = None) -> Exchange | None:
 
 
 def infer_exchange_from_symbol(symbol: str) -> Exchange:
-    """For ad-hoc symbols typed into Stock Search rather than picked from a
-    watchlist - a suffix match (.NS/.SI/.L) identifies the market; a bare
-    ticker with no suffix is assumed to be a US listing."""
+    """For ad-hoc symbols typed into Stock Search rather than picked from the
+    watchlist - a .NS suffix match confirms NSE; anything else still resolves
+    to NSE since it's the only exchange this build supports."""
     for suffix, exchange in _SUFFIX_TO_EXCHANGE.items():
         if symbol.upper().endswith(suffix):
             return exchange
-    return NYSE
+    return NSE

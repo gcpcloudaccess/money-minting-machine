@@ -39,7 +39,7 @@ main_col, side_col = st.columns([2.3, 1], gap="medium")
 with main_col:
     watchlist = app_settings["watchlist"]
     held_symbols = [p["symbol"] for p in portfolio["positions"]]
-    default_symbol = held_symbols[0] if held_symbols else (watchlist[0] if watchlist else "RELIANCE.NS")
+    default_symbol = held_symbols[0] if held_symbols else (watchlist[0] if watchlist else "NIFTYBEES.NS")
     chart_options = list(dict.fromkeys([*held_symbols, *watchlist]))
     hc1, hc2 = st.columns([1, 3])
     with hc1:

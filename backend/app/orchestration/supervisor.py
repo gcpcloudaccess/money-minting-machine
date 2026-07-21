@@ -15,7 +15,7 @@ from app.consensus import reliability_tracker
 from app.consensus.trust_weighted_consensus import ConsensusResult, compute_consensus
 from app.data import exchanges as exchange_registry
 from app.data import fundamentals as fundamentals_data
-from app.data import fx, news_data
+from app.data import news_data
 from app.data.exchanges import Exchange
 from app.data.market_data import MarketDataProvider
 from app.db.models import AgentVote as AgentVoteRow
@@ -121,14 +121,12 @@ def run_committee_for_symbol(
     opp_vote = next((v for v in critic_votes if v.agent_name == "Opportunity Critic"), None)
     alternatives = opp_vote.metrics.get("alternatives", []) if opp_vote else []
 
-    # Every price entering the pipeline from here on is INR-equivalent, converted
-    # once at the source - position sizing, portfolio cash/exposure, P&L, and the
-    # "Overall Return" stats all stay in one currency exactly as before, even
-    # when the underlying symbol trades in USD/GBP/SGD. price_local/fx_rate are
-    # kept alongside purely for explainability (see execution_engine.py).
+    # NSE-only, INR-only build - no currency conversion needed. price_local/
+    # fx_rate_to_inr are kept as fields (always price/1.0) purely so the
+    # Trade/Position schema and execution_engine.py stay unchanged.
     price_local = provider.get_latest_price(symbol)
-    fx_rate_to_inr = fx.get_fx_rate(exchange.currency)
-    price = price_local * fx_rate_to_inr
+    fx_rate_to_inr = 1.0
+    price = price_local
     reasoning_text = report_agent.build_consensus_reasoning(symbol, consensus, all_votes, historical_context_summary(ctx))
 
     decision_row = Decision(

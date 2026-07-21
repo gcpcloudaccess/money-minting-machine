@@ -1,17 +1,16 @@
 """Position Sizing Agent: turns a consensus verdict + confidence into a
-concrete order quantity, respecting the ₹10,000 capital / 1:2 leverage cap and
-scaling exposure with both confidence and the risk regime.
+concrete order quantity, respecting the ₹10,00,000 paper capital / configured
+leverage cap and scaling exposure with both confidence and the risk regime.
 
-Leverage is flexible, not a flat always-on 2x: any trade that actually clears
-the committee's decisive threshold already represents real conviction, so it
-gets meaningful leverage by default (BASE_LEVERAGE), scaling up toward the
-configured ceiling (settings.leverage, default 2x for 1:2) as confidence and
-risk quality improve further. This system's directional confidence realistically
-ranges ~18-40% for trades that clear the decisive bar (see
-trust_weighted_consensus.py) - scaling against the full 0-100% range would
-make leverage nearly impossible to exercise in practice, which is exactly the
-bug this was calibrated to fix: real trades were sizing well under available
-*cash*, never even touching margin, let alone approaching the 2x ceiling."""
+Default configuration (settings.leverage = 1.0) is cash-only, no-margin paper
+trading: leverage_used is mathematically pinned to 1.0 whenever max_leverage
+<= BASE_LEVERAGE, so margin_used_inr is always 0 regardless of confidence or
+risk - a trade can never draw on buying power beyond the cash actually on
+hand. If settings.leverage is raised above 1.0 (e.g. back to 2.0 for 1:2),
+leverage_used scales up from BASE_LEVERAGE toward that ceiling as confidence
+and risk quality improve, calibrated against this system's realistic
+directional-confidence range (~18-40% for trades that clear the decisive bar
+- see trust_weighted_consensus.py), rather than the full 0-100% scale."""
 
 from __future__ import annotations
 

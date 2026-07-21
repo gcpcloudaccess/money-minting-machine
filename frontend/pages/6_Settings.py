@@ -18,13 +18,13 @@ c4.markdown(metric_card("Tick Interval", f"{settings['tick_minutes']} min"), uns
 
 st.write("")
 open_now = settings["currently_open_exchange"]
-real_status = f"**{open_now}** is open right now" if open_now else "all 4 exchanges are closed right now"
+real_status = f"**{open_now}** is open right now" if open_now else "NSE is closed right now"
 if settings["data_mode"] == "live":
-    data_mode_note = f"Trading whichever exchange is open — {real_status}." if open_now else f"{real_status.capitalize()} — the session runner will resume the moment one opens."
+    data_mode_note = f"Trading live — {real_status}." if open_now else f"{real_status.capitalize()} — the session runner will resume the moment NSE opens."
 else:
     data_mode_note = (
         f"Demoing **{settings['session_exchange']}** regardless of the real clock (real-world status: {real_status}) "
-        "— replay mode always uses a single fixed exchange so it's demoable any time."
+        "— replay mode works any time of day."
     )
 st.markdown(
     f'<div class="ic-card">Data Mode: <b style="color:#2DD4BF;">{settings["data_mode"].upper()}</b> — {data_mode_note}</div>',
@@ -43,11 +43,8 @@ else:
     )
 
 st.write("")
-st.subheader("Exchanges (auto-switch when live)")
-st.caption(
-    "In LIVE mode, the session runner automatically trades whichever of these is currently open — one at a time — "
-    "and rolls over to the next as markets close. Priority when more than one is open: India → Singapore → London → US."
-)
+st.subheader("Exchange")
+st.caption("This build trades NSE only — the India-focused universe below (Nifty 50 + MCX gold/silver ETF proxies).")
 for ex in settings["exchanges"]:
     status_color, status_text = ("#22C55E", "OPEN NOW") if ex["is_open"] else ("#64748B", "closed")
     st.markdown(

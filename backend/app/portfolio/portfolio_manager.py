@@ -30,9 +30,9 @@ def process_decision(
     price_local: float | None = None,
     fx_rate_to_inr: float = 1.0,
 ) -> dict:
-    """`price` is always INR-equivalent (converted once by the caller via
-    app/data/fx.py before this runs); `price_local`/`fx_rate_to_inr` are only
-    threaded through to execution_engine for explainability on the Trade row."""
+    """`price` is always INR (NSE-only, INR-only build - no conversion needed);
+    `price_local`/`fx_rate_to_inr` are only threaded through to execution_engine
+    for schema compatibility on the Trade row."""
     existing = execution_engine.get_open_position(db, portfolio, symbol)
     advice = execution_advisor.advise(verdict, directional_confidence_pct, risk_level)
 
