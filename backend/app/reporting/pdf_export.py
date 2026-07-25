@@ -13,6 +13,7 @@ from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy.orm import Session
 
+from app.data import exchanges as exchange_registry
 from app.db.models import Decision, Portfolio, Trade
 
 REPORTS_DIR = Path(__file__).resolve().parents[3] / "reports"
@@ -21,7 +22,11 @@ REPORTS_DIR.mkdir(exist_ok=True)
 
 def generate_session_report(db: Session, portfolio: Portfolio) -> str:
     trades = db.query(Trade).filter_by(portfolio_id=portfolio.id).order_by(Trade.timestamp).all()
-    decisions = db.query(Decision).order_by(Decision.timestamp).all()
+    # Scoped to this portfolio's own exchange watchlist (NSE vs CRYPTO_INDIA
+    # now run concurrently with independent portfolios - without this filter,
+    # every session's report would mix in the other exchange's decisions too).
+    watchlist = exchange_registry.get_exchange(portfolio.exchange).watchlist
+    decisions = db.query(Decision).filter(Decision.symbol.in_(watchlist)).order_by(Decision.timestamp).all()
 
     net_profit = portfolio.cash_inr - portfolio.starting_capital
     total_return_pct = (net_profit / portfolio.starting_capital) * 100 if portfolio.starting_capital else 0.0

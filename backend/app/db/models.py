@@ -140,3 +140,29 @@ class AuditLog(Base):
     timestamp: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     event_type: Mapped[str] = mapped_column(String(64))
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class PositionalPick(Base):
+    """One symbol's result from a positional-options scan (see
+    app/orchestration/positional_scanner.py) - the ranked "best pick" output,
+    persisted so the dashboard's Positional Picks tab can show the latest
+    scan without re-running the full ~19-agent committee on every page load,
+    and so a conviction-trend chart (docs/POSITIONAL_OPTIONS_ENHANCEMENT_PLAN.md
+    phase 5) has history to plot once the app has run a few scans."""
+
+    __tablename__ = "positional_picks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scan_id: Mapped[str] = mapped_column(String(36))  # groups every symbol from one scan_universe() run together
+    symbol: Mapped[str] = mapped_column(String(32))
+    timestamp: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    direction: Mapped[str] = mapped_column(String(16))  # BUY | SELL | HOLD | WAIT
+    directional_confidence: Mapped[float] = mapped_column(Float)
+    rank_score: Mapped[float] = mapped_column(Float)  # what the ranked list is sorted by - see positional_scanner.py
+    structure_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    structure_json: Mapped[dict] = mapped_column(JSON, default=dict)  # legs, max_loss/profit, breakeven, payoff_points
+    iv_rank: Mapped[float | None] = mapped_column(Float, nullable=True)
+    days_to_next_catalyst: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    next_catalyst_label: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    consensus_reasoning: Mapped[str] = mapped_column(Text)
+    agent_details_json: Mapped[dict] = mapped_column(JSON, default=dict)

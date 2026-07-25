@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
-from app.agents.analysts import ALGO_TIER, DRILLDOWN_TIER, MACRO_TIER
+from app.agents.analysts import ALGO_TIER, DRILLDOWN_TIER, MACRO_TIER, POSITIONAL_TIER
 from app.agents.base import AgentVote, AnalysisContext
 from app.agents.critics import ALL_CRITICS
 from app.agents.debate_agent import DebateAgent
@@ -51,6 +51,41 @@ def run_debate(ctx: AnalysisContext) -> tuple[list[AgentVote], AgentVote, list[A
     algo_votes = _run_tier(ALGO_TIER, algo_ctx, max_workers)
 
     analyst_votes = [*macro_votes, *drilldown_votes, *algo_votes]
+
+    debate_vote = DebateAgent().vote(ctx, analyst_votes)
+
+    with ThreadPoolExecutor(max_workers=min(max_workers, len(ALL_CRITICS))) as pool:
+        critic_votes = list(pool.map(lambda cls: cls().vote(ctx, analyst_votes + [debate_vote]), ALL_CRITICS))
+
+    return analyst_votes, debate_vote, critic_votes
+
+
+def run_positional_debate(ctx: AnalysisContext) -> tuple[list[AgentVote], AgentVote, list[AgentVote]]:
+    """Same staged pipeline as run_debate(), with one extra tier inserted
+    between the drill-down and algo tiers: POSITIONAL_TIER (Relative
+    Strength, Catalyst, Volatility Regime, IV & Options Chain, Liquidity -
+    see app/agents/analysts/__init__.py), which reads options-chain/IV/
+    catalyst data that only a positional scan populates on ctx (see
+    app/orchestration/positional_scanner.py).
+
+    Deliberately a separate function rather than a `mode` flag on run_debate()
+    - the intraday pipeline (session_runner.py ticks) must keep calling
+    run_debate() completely unchanged, so this can't affect its behavior or
+    the existing staged-pipeline tests."""
+    max_workers = max(1, get_settings().max_parallel_agents)
+
+    macro_votes = _run_tier(MACRO_TIER, ctx, max_workers)
+
+    drilldown_ctx = replace(ctx, prior_stage_votes=macro_votes)
+    drilldown_votes = _run_tier(DRILLDOWN_TIER, drilldown_ctx, max_workers)
+
+    positional_ctx = replace(ctx, prior_stage_votes=macro_votes + drilldown_votes)
+    positional_votes = _run_tier(POSITIONAL_TIER, positional_ctx, max_workers)
+
+    algo_ctx = replace(ctx, prior_stage_votes=macro_votes + drilldown_votes + positional_votes)
+    algo_votes = _run_tier(ALGO_TIER, algo_ctx, max_workers)
+
+    analyst_votes = [*macro_votes, *drilldown_votes, *positional_votes, *algo_votes]
 
     debate_vote = DebateAgent().vote(ctx, analyst_votes)
 

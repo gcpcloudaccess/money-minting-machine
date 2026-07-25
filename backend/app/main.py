@@ -16,9 +16,9 @@ from app.data import exchanges as exchange_registry
 from app.data import fundamentals as fundamentals_data
 from app.data import market_data
 from app.data.market_data import MarketDataProvider
-from app.db.models import AgentVote, AuditLog, Decision, Portfolio, Position, Trade
+from app.db.models import AgentVote, AuditLog, Decision, Portfolio, Position, PositionalPick, Trade
 from app.db.session import get_db, init_db
-from app.orchestration import supervisor
+from app.orchestration import positional_scanner, supervisor
 from app.orchestration.session_runner import SessionRunner
 from app.reporting import pdf_export, visualization
 from app.trading import execution_engine
@@ -126,19 +126,21 @@ def _portfolio_total_value(db: Session, portfolio: Portfolio) -> float:
 
 
 @app.get("/portfolio")
-def get_portfolio(db: Session = Depends(get_db)) -> dict:
-    portfolio = execution_engine.get_active_portfolio(db)
+def get_portfolio(exchange: str = "NSE", db: Session = Depends(get_db)) -> dict:
+    portfolio = execution_engine.get_active_portfolio(db, exchange=exchange)
     positions = db.query(Position).filter_by(portfolio_id=portfolio.id, status="open").all()
 
     total_value = _portfolio_total_value(db, portfolio)
     mtm_value = total_value - portfolio.cash_inr
     net_profit = total_value - portfolio.starting_capital
 
-    # "Overall" aggregates every session (portfolio row) this app has ever run, not just
-    # today's: each session independently starts at settings.starting_capital_inr (₹10,000,
-    # non-compounding) and force-closes with 0 open positions, so a closed session's ending
-    # value is simply its final cash balance; the active session uses today's mark-to-market.
-    all_portfolios = db.query(Portfolio).all()
+    # "Overall" aggregates every session (portfolio row) THIS EXCHANGE has ever run, not
+    # just today's, and not mixed with the other exchange's sessions (NSE and CRYPTO_INDIA
+    # now run concurrently with independent portfolios - see execution_engine.py): each
+    # session independently starts at settings.starting_capital_inr and force-closes with 0
+    # open positions, so a closed session's ending value is simply its final cash balance;
+    # the active session uses today's mark-to-market.
+    all_portfolios = db.query(Portfolio).filter_by(exchange=exchange).all()
     overall_starting_capital = 0.0
     overall_ending_value = 0.0
     closed_sessions = 0
@@ -188,8 +190,8 @@ def get_portfolio(db: Session = Depends(get_db)) -> dict:
 
 
 @app.get("/portfolio/equity-curve")
-def get_equity_curve(db: Session = Depends(get_db)) -> dict:
-    portfolio = execution_engine.get_active_portfolio(db)
+def get_equity_curve(exchange: str = "NSE", db: Session = Depends(get_db)) -> dict:
+    portfolio = execution_engine.get_active_portfolio(db, exchange=exchange)
     trades = db.query(Trade).filter_by(portfolio_id=portfolio.id).order_by(Trade.timestamp).all()
 
     timestamps = [portfolio.session_start.isoformat()]
@@ -230,7 +232,11 @@ def get_market_chart(symbol: str, db: Session = Depends(get_db)) -> dict:
     if bars.empty:
         raise HTTPException(status_code=404, detail=f"No bar data available for {symbol}")
 
-    portfolio = execution_engine.get_active_portfolio(db)
+    # Resolve the symbol's OWN exchange rather than always defaulting to NSE -
+    # a crypto symbol's trade markers live in the CRYPTO_INDIA portfolio, not
+    # NSE's, now that the two run concurrently with independent portfolios.
+    symbol_exchange = exchange_registry.infer_exchange_from_symbol(symbol)
+    portfolio = execution_engine.get_active_portfolio(db, exchange=symbol_exchange.code)
     trades = (
         db.query(Trade)
         .filter_by(portfolio_id=portfolio.id, symbol=symbol)
@@ -255,9 +261,13 @@ def get_market_chart(symbol: str, db: Session = Depends(get_db)) -> dict:
 
 # ---------------------------------------------------------------- watchlist / search
 @app.get("/watchlist")
-def get_watchlist(db: Session = Depends(get_db)) -> list[dict]:
+def get_watchlist(exchange: str = "NSE", db: Session = Depends(get_db)) -> list[dict]:
+    # NSE keeps its existing settings-driven watchlist (unchanged behavior);
+    # any other exchange (i.e. CRYPTO_INDIA) reads from the exchange registry
+    # directly, which is what session_runner.py actually trades against.
+    watchlist_symbols = settings.watchlist_symbols if exchange == "NSE" else list(exchange_registry.get_exchange(exchange).watchlist)
     out = []
-    for symbol in settings.watchlist_symbols:
+    for symbol in watchlist_symbols:
         latest = db.query(Decision).filter_by(symbol=symbol).order_by(Decision.timestamp.desc()).first()
         try:
             price = _search_provider.get_latest_price(symbol)
@@ -295,8 +305,13 @@ def get_watchlist(db: Session = Depends(get_db)) -> list[dict]:
 
 @app.post("/analyze/{symbol}")
 def analyze_symbol(symbol: str, db: Session = Depends(get_db)) -> dict:
+    # Peer context (AnalysisContext.peer_bars) should be the symbol's own
+    # exchange's watchlist, not always NSE's - analyzing BTCINR with Nifty/
+    # gold/silver as its "peers" was never meaningful, and now that crypto is
+    # a real second exchange this is easy to get right.
+    peer_watchlist = exchange_registry.infer_exchange_from_symbol(symbol).watchlist
     try:
-        result = supervisor.run_committee_for_symbol(db, _search_provider, symbol, settings.watchlist_symbols, execute=False)
+        result = supervisor.run_committee_for_symbol(db, _search_provider, symbol, list(peer_watchlist), execute=False)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Analysis failed for {symbol}: {exc}") from exc
     return result
@@ -351,9 +366,9 @@ def trigger_tick() -> dict:
 
 
 @app.post("/session/close")
-def close_session() -> dict:
-    _session_runner.close_now()
-    return {"status": "session closed"}
+def close_session(exchange: str = "NSE") -> dict:
+    _session_runner.close_now(exchange)
+    return {"status": "session closed", "exchange": exchange}
 
 
 @app.post("/session/pause")
@@ -416,11 +431,11 @@ def get_settings_view() -> dict:
 
 
 @app.get("/planner/allocation-plan")
-def get_allocation_plan(db: Session = Depends(get_db)) -> dict:
+def get_allocation_plan(exchange: str = "NSE", db: Session = Depends(get_db)) -> dict:
     """Investment Planner Agent: current session's asset-allocation caps
     (per-symbol, per-sector) and profit/loss goals, plus live progress toward
     those goals for the trading day so far."""
-    portfolio = execution_engine.get_active_portfolio(db)
+    portfolio = execution_engine.get_active_portfolio(db, exchange=exchange)
     plan = allocation_planner.build_plan(settings.risk_tolerance, portfolio.starting_capital, portfolio.leverage * portfolio.starting_capital)
 
     # "Today's P&L" must span every session that started today, not just the currently
@@ -430,7 +445,7 @@ def get_allocation_plan(db: Session = Depends(get_db)) -> dict:
     # realized earlier today in a session that has since closed and been replaced.
     today_ist = dt.datetime.now(market_data.IST).date()
     running_pnl_estimate = 0.0
-    for p in db.query(Portfolio).all():
+    for p in db.query(Portfolio).filter_by(exchange=exchange).all():
         session_date = _ist_date(p.session_start)
         if session_date != today_ist:
             continue
@@ -462,3 +477,128 @@ def get_allocation_plan(db: Session = Depends(get_db)) -> dict:
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok", "time": dt.datetime.now(dt.timezone.utc).isoformat()}
+
+
+# ---------------------------------------------------------------- positional options picks
+def _strategy_dict(strategy) -> dict | None:
+    if strategy is None:
+        return None
+    return {
+        "structure_type": strategy.structure_type,
+        "direction": strategy.direction,
+        "expiry": strategy.expiry,
+        "legs": [{"action": l.action, "option_type": l.option_type, "strike": l.strike, "premium": l.premium} for l in strategy.legs],
+        "max_loss": strategy.max_loss,
+        "max_profit": strategy.max_profit,
+        "breakeven": strategy.breakeven,
+        "payoff_points": strategy.payoff_points,
+        "rationale": strategy.rationale,
+        "data_complete": strategy.data_complete,
+    }
+
+
+def _scan_result_dict(result: dict) -> dict:
+    next_catalyst = result["next_catalyst"]
+    return {
+        "symbol": result["symbol"],
+        "direction": result["direction"],
+        "directional_confidence": result["directional_confidence"],
+        "rank_score": result["rank_score"],
+        "strategy": _strategy_dict(result["strategy"]),
+        "iv_rank": result["iv_rank"],
+        "days_to_next_catalyst": next_catalyst["days_away"] if next_catalyst else None,
+        "next_catalyst_label": next_catalyst["label"] if next_catalyst else None,
+        "spot_price": result["spot_price"],
+        "has_options_data": result["has_options_data"],
+        "consensus_reasoning": result["consensus_reasoning"],
+        "agent_details": result["agent_details"],
+        "agent_votes": result["agent_votes"],
+    }
+
+
+def _pick_row_dict(row: PositionalPick) -> dict:
+    return {
+        "id": row.id, "scan_id": row.scan_id, "symbol": row.symbol,
+        "timestamp": row.timestamp.isoformat() if row.timestamp else None,
+        "direction": row.direction, "directional_confidence": row.directional_confidence,
+        "rank_score": row.rank_score, "structure_type": row.structure_type,
+        "strategy": row.structure_json or None,
+        "iv_rank": row.iv_rank,
+        "days_to_next_catalyst": row.days_to_next_catalyst,
+        "next_catalyst_label": row.next_catalyst_label,
+        "consensus_reasoning": row.consensus_reasoning,
+        "agent_details": row.agent_details_json.get("agent_details", []),
+        "agent_votes": row.agent_details_json.get("agent_votes", []),
+    }
+
+
+@app.get("/positional/universe")
+def get_positional_universe() -> dict:
+    return {
+        "universe": settings.positional_universe_symbols,
+        "options_expiry_weekday": settings.options_expiry_weekday,
+        "min_days_to_expiry": settings.min_days_to_expiry_positional,
+        "max_days_to_expiry": settings.max_days_to_expiry_positional,
+    }
+
+
+@app.post("/positional/scan")
+def run_positional_scan(db: Session = Depends(get_db)) -> dict:
+    """Runs the full positional committee (see app/orchestration/
+    positional_scanner.py) across the whole positional universe and returns
+    it ranked - the "best positional pick(s)" deliverable. Expensive: ~19
+    agents x len(positional_universe) symbols, so this reliably takes several
+    minutes, same "generous timeout, no artificial fast path" stance as
+    /analyze/{symbol} (see frontend/api_client.py's TIMEOUT_SECONDS)."""
+    results = positional_scanner.scan_universe(db)
+    return {"scan_size": len(results), "picks": [_scan_result_dict(r) for r in results]}
+
+
+@app.get("/positional/picks")
+def get_positional_picks(limit: int = 20, db: Session = Depends(get_db)) -> dict:
+    """Latest persisted scan's ranked picks - does NOT trigger a new scan
+    (see POST /positional/scan for that). Empty picks list if no scan has
+    ever been run yet."""
+    latest = db.query(PositionalPick).order_by(PositionalPick.timestamp.desc()).first()
+    if latest is None:
+        return {"scan_id": None, "scanned_at": None, "picks": []}
+
+    rows = (
+        db.query(PositionalPick)
+        .filter_by(scan_id=latest.scan_id)
+        .order_by(PositionalPick.rank_score.desc())
+        .limit(limit)
+        .all()
+    )
+    return {"scan_id": latest.scan_id, "scanned_at": latest.timestamp.isoformat(), "picks": [_pick_row_dict(r) for r in rows]}
+
+
+@app.get("/positional/picks/{symbol}")
+def get_positional_pick_detail(symbol: str, db: Session = Depends(get_db)) -> dict:
+    """Full drill-down (agent votes, strategy, payoff curve) for one symbol's
+    most recent positional scan result, plus its conviction-trend history
+    (directional_confidence across every past scan for this symbol) for the
+    dashboard's trend chart."""
+    latest = (
+        db.query(PositionalPick)
+        .filter_by(symbol=symbol)
+        .order_by(PositionalPick.timestamp.desc())
+        .first()
+    )
+    if latest is None:
+        raise HTTPException(status_code=404, detail=f"No positional scan history for {symbol} yet - run POST /positional/scan first.")
+
+    history = (
+        db.query(PositionalPick)
+        .filter_by(symbol=symbol)
+        .order_by(PositionalPick.timestamp.asc())
+        .all()
+    )
+    conviction_trend = [
+        {"timestamp": r.timestamp.isoformat(), "direction": r.direction, "directional_confidence": r.directional_confidence}
+        for r in history
+    ]
+
+    detail = _pick_row_dict(latest)
+    detail["conviction_trend"] = conviction_trend
+    return detail

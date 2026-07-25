@@ -55,6 +55,44 @@ EXPERTISE_RELEVANCE: dict[str, float] = {
 }
 DEFAULT_EXPERTISE_RELEVANCE = 0.5
 
+# Positional (multi-day/week options) mode - a genuinely different weighting,
+# not just the intraday table with new agents bolted on: fundamentals/macro/
+# geopolitical/policy move too slowly to matter in a 4-hour session but
+# matter far more over a multi-week hold, while the fast intraday-only edge
+# (Algo Signal, a per-tick logistic regression) is nearly meaningless at this
+# horizon. Options-market-specific agents (IV & Options Chain, Catalyst) sit
+# at the top since they're what makes a pick actually tradable as an options
+# structure, not just directionally right. See docs/
+# POSITIONAL_OPTIONS_ENHANCEMENT_PLAN.md for the full rationale.
+POSITIONAL_EXPERTISE_RELEVANCE: dict[str, float] = {
+    "Technical Analyst": 0.85,          # daily-trend overlay still matters, just less than the options-specific reads
+    "IV & Options Chain Analyst": 1.0,
+    "Catalyst & Events Analyst": 0.9,
+    "Fundamental Analyst": 0.85,        # far more relevant over weeks than a 4-hour session
+    "Risk Assessment Analyst": 0.85,
+    "Risk Critic": 0.85,
+    "Relative Strength Analyst": 0.8,
+    "Macroeconomic Analyst": 0.7,
+    "Macro Critic": 0.7,
+    "Sentiment Analyst": 0.65,
+    "Profit Critic": 0.75,
+    "Debate Agent": 0.75,
+    "Opportunity Critic": 0.75,
+    "Geopolitical Analyst": 0.65,
+    "Government Policy Analyst": 0.65,
+    # Not directional - a premium-cost/structure signal (see
+    # app/agents/analysts/volatility_regime.py) - kept low here so it informs
+    # the Strategy Architect without swinging the BUY/SELL verdict itself.
+    "Volatility Regime Analyst": 0.35,
+    # A tradability gate, not an opinion (see app/agents/analysts/liquidity.py)
+    # - low relevance here, but still able to pull WAIT when a pick is
+    # genuinely untradeable via its own vote + agreement_adjustment.
+    "Liquidity Analyst": 0.4,
+    # A per-tick intraday model, not calibrated for a multi-week hold.
+    "Algo Signal Analyst": 0.3,
+    "Astrological Analyst": 0.2,
+}
+
 REDUNDANCY_FACTOR = 0.3   # discount for agreeing with the room
 DISAGREEMENT_BONUS = 0.5  # amplification for disagreeing while historically reliable
 AGREEMENT_ADJ_MIN = 0.4
@@ -81,6 +119,20 @@ AGREEMENT_ADJ_MAX = 1.6
 # near-consensus the way the original thresholds effectively did.
 DECISIVE_THRESHOLD = 14.0
 LOW_CONVICTION_THRESHOLD = 10.0
+
+# Positional thresholds start HIGHER than the intraday ones, deliberately -
+# not reused as-is. The intraday thresholds were repeatedly lowered (30% ->
+# 18% -> 14%) specifically to fight 10-minute-tick noise from a 13-agent
+# committee where several agents structurally default to HOLD. A daily-
+# cadence positional scan aggregates less noisy, slower-moving evidence
+# (daily bars, IV, catalysts) from an 18-agent committee, so a higher bar is
+# both affordable and appropriate - a positional options trade ties up
+# capital for weeks, so it deserves more committee agreement than a 10-minute
+# intraday call before executing. These are a documented starting point, not
+# backtested yet (see docs/POSITIONAL_OPTIONS_ENHANCEMENT_PLAN.md phase 3) -
+# recalibrate against real positional scan history once enough runs exist.
+POSITIONAL_DECISIVE_THRESHOLD = 22.0
+POSITIONAL_LOW_CONVICTION_THRESHOLD = 12.0
 
 
 @dataclass
@@ -130,14 +182,23 @@ def _confidence_for(action: str, votes: list[AgentVote], trust_scores: dict[str,
     return round(max(0.0, min(100.0, 100.0 * share * avg_conviction)), 2)
 
 
-def compute_consensus(votes: list[AgentVote], trust_scores: dict[str, float]) -> ConsensusResult:
+def compute_consensus(votes: list[AgentVote], trust_scores: dict[str, float], mode: str = "intraday") -> ConsensusResult:
     """
     votes: all analyst + critic votes cast this tick for one symbol.
     trust_scores: agent_name -> persisted historical reliability/trust (0-1).
         Callers should supply a sane prior (e.g. 0.5) for agents with no history yet.
+    mode: "intraday" (default, unchanged behavior - every existing caller/test
+        keeps working exactly as before) or "positional", which switches to
+        POSITIONAL_EXPERTISE_RELEVANCE and the higher positional thresholds -
+        see app/orchestration/positional_scanner.py, the only positional-mode
+        caller.
     """
     if not votes:
         return ConsensusResult(verdict="WAIT", directional_confidence=0.0, winning_action="WAIT", action_weight_totals={})
+
+    relevance_table = POSITIONAL_EXPERTISE_RELEVANCE if mode == "positional" else EXPERTISE_RELEVANCE
+    decisive_threshold = POSITIONAL_DECISIVE_THRESHOLD if mode == "positional" else DECISIVE_THRESHOLD
+    low_conviction_threshold = POSITIONAL_LOW_CONVICTION_THRESHOLD if mode == "positional" else LOW_CONVICTION_THRESHOLD
 
     action_totals = {a: 0.0 for a in ACTIONS}
     agent_weights: dict[str, float] = {}
@@ -145,7 +206,7 @@ def compute_consensus(votes: list[AgentVote], trust_scores: dict[str, float]) ->
 
     for vote in votes:
         trust = trust_scores.get(vote.agent_name, 0.5)
-        relevance = EXPERTISE_RELEVANCE.get(vote.agent_name, DEFAULT_EXPERTISE_RELEVANCE)
+        relevance = relevance_table.get(vote.agent_name, DEFAULT_EXPERTISE_RELEVANCE)
         agreement_adj = _agreement_adjustment(vote, votes, trust)
 
         weight = vote.confidence * relevance * trust * agreement_adj
@@ -179,16 +240,16 @@ def compute_consensus(votes: list[AgentVote], trust_scores: dict[str, float]) ->
     best_directional = max(directional_actions, key=lambda a: action_totals[a])
     best_directional_confidence = _confidence_for(best_directional, votes, trust_scores, action_totals, total_weight)
 
-    if best_directional_confidence >= DECISIVE_THRESHOLD:
+    if best_directional_confidence >= decisive_threshold:
         winning_action = best_directional
         directional_confidence = best_directional_confidence
     else:
         winning_action = max(action_totals, key=action_totals.get)
         directional_confidence = _confidence_for(winning_action, votes, trust_scores, action_totals, total_weight)
 
-    if directional_confidence < LOW_CONVICTION_THRESHOLD:
+    if directional_confidence < low_conviction_threshold:
         verdict = "WAIT"
-    elif winning_action in ("BUY", "SELL", "SWITCH") and directional_confidence >= DECISIVE_THRESHOLD:
+    elif winning_action in ("BUY", "SELL", "SWITCH") and directional_confidence >= decisive_threshold:
         verdict = winning_action
     else:
         verdict = "HOLD" if winning_action not in ("WAIT",) else "WAIT"

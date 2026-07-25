@@ -65,9 +65,38 @@ class Settings(BaseSettings):
     macro_policy_rate_pct: float | None = None
     macro_data_as_of: str = ""  # ISO date, e.g. "2026-06-30"
 
+    # ---------------------------------------------------------------- positional options
+    # A separate, wider universe from `watchlist` (which stays scoped to the 3
+    # intraday instruments) - positional picks need a screenable set of liquid,
+    # optionable NSE large-caps to actually produce a ranked "best pick" from.
+    # Starting set: liquid, heavily-traded F&O large-caps across sectors, not
+    # the full Nifty 50 - expand freely, this is just a usable default.
+    positional_universe: str = (
+        "RELIANCE.NS,HDFCBANK.NS,ICICIBANK.NS,INFY.NS,TCS.NS,LT.NS,SBIN.NS,AXISBANK.NS,"
+        "KOTAKBANK.NS,BHARTIARTL.NS,ITC.NS,HINDUNILVR.NS,MARUTI.NS,SUNPHARMA.NS,TATAMOTORS.NS,"
+        "TATASTEEL.NS,BAJFINANCE.NS,ADANIENT.NS,ULTRACEMCO.NS,TITAN.NS"
+    )
+
+    # NSE has changed the weekday for index weekly options expiry more than
+    # once (Thursday -> Tuesday as of this build) - see app/data/calendar_data.py.
+    # 0=Monday ... 6=Sunday.
+    options_expiry_weekday: int = 1  # Tuesday
+
+    min_days_to_expiry_positional: int = 7    # avoid picks that decay/expire too soon to hold a positional thesis
+    max_days_to_expiry_positional: int = 45   # avoid tying up premium in an expiry far beyond the thesis horizon
+
+    # No free live feed for RBI MPC meeting dates (published on rbi.org.in well
+    # in advance) - comma-separated ISO dates, update periodically. Empty by
+    # default rather than fabricated.
+    rbi_mpc_dates: str = ""
+
     @property
     def watchlist_symbols(self) -> list[str]:
         return [s.strip() for s in self.watchlist.split(",") if s.strip()]
+
+    @property
+    def positional_universe_symbols(self) -> list[str]:
+        return [s.strip() for s in self.positional_universe.split(",") if s.strip()]
 
     @property
     def max_exposure_inr(self) -> float:

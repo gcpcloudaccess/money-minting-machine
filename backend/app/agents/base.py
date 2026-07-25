@@ -24,6 +24,15 @@ class AnalysisContext:
     prior_stage_votes: list["AgentVote"] = field(default_factory=list)  # votes from earlier tiers in the staged pipeline
     historical_context: list[dict] = field(default_factory=list)  # retrieved past Decision rows for this symbol, see app/memory/retrieval.py
 
+    # ---- positional/options fields (see docs/POSITIONAL_OPTIONS_ENHANCEMENT_PLAN.md) ----
+    # All default to None/"intraday"/empty so every existing intraday agent,
+    # supervisor.run_committee_for_symbol() call, and test fixture is
+    # unaffected - only app/orchestration/positional_scanner.py populates these.
+    horizon: str = "intraday"  # "intraday" | "positional" - lets an agent (and the consensus) branch on time horizon
+    option_chain: object | None = None  # app.data.options_data.OptionChainSnapshot, when available
+    iv_history: list[float] = field(default_factory=list)  # this symbol's recent ATM IV history, see app/data/options_data.py
+    catalyst_events: list[dict] = field(default_factory=list)  # [{date, kind, label, days_away}], see app/data/calendar_data.py
+
 
 class AgentVote(BaseModel):
     agent_name: str

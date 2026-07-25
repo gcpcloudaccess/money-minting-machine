@@ -1,6 +1,6 @@
 # Autonomous Multi-Agent Investment Committee
 
-Autonomous multi-agent committee that paper-trades NSE intraday: an India-only, single-exchange universe (Nifty 50 spot index `^NSEI` — yfinance has no NSE Nifty futures data, so this is a synthetic paper-only position, not a real placeable order — plus MCX gold/silver via their NSE-listed ETF proxies `GOLDBEES.NS`/`SILVERBEES.NS`, with a COMEX gold/silver futures fallback for the analysis feed only while NSE is closed, see `app/data/market_data.py`). Starts with ₹1,00,000 virtual capital, cash-only (no margin), runs a 4–6 hour session, and autonomously decides BUY / SELL / HOLD / WAIT / SWITCH per symbol using a **trust-weighted, directional-confidence-aware consensus** across 9 analyst agents and a 4-critic debate loop — never simple majority voting or plain confidence averaging.
+Autonomous multi-agent committee that paper-trades NSE intraday: an India-only universe (Nifty 50 spot index `^NSEI` — yfinance has no NSE Nifty futures data, so this is a synthetic paper-only position, not a real placeable order — plus MCX gold/silver via their NSE-listed ETF proxies `GOLDBEES.NS`/`SILVERBEES.NS`, with a COMEX gold/silver futures fallback for the analysis feed only while NSE is closed, see `app/data/market_data.py`), **plus BTC via CoinDCX (an Indian crypto exchange, not a global one) trading 24/7 — weekends and NSE's off-hours included** (see [Crypto (BTC)](#crypto-btc) below). Starts with ₹1,00,000 virtual capital per exchange, cash-only (no margin), and autonomously decides BUY / SELL / HOLD / WAIT / SWITCH per symbol using a **trust-weighted, directional-confidence-aware consensus** across 9 analyst agents and a 4-critic debate loop — never simple majority voting or plain confidence averaging.
 
 This build targets a **hackathon-friendly, zero-Docker setup**: everything runs with just a Python virtualenv (Python 3.14 verified) and two local processes (FastAPI backend + Streamlit frontend). See [Architecture mapping](#architecture-mapping-diagram--this-build) for how each diagrammed component was implemented.
 
@@ -71,6 +71,33 @@ weight = confidence × expertise_relevance(context) × trust_score(persisted his
 ```
 
 `agreement_adjustment` discounts agents that just agree with the room (redundant signal) and amplifies agents that disagree with the room *and* have a strong track record (the "reliable contrarian" case from the spec). The final `directional_confidence` blends the winning action's *dominance* (share of trust-weighted influence) with the *conviction* of the agents backing it (their own confidence × trust) — see `backend/tests/test_consensus.py` for the proofs that this diverges from both majority voting and plain confidence averaging.
+
+## Crypto (BTC)
+
+A second, fully independent trading exchange alongside NSE — added specifically so trades keep executing on weekends and outside NSE's 09:15–15:30 IST session, which a single India-equities-only build otherwise has no way to do.
+
+- **Exchange**: `CRYPTO_INDIA` in `app/data/exchanges.py` — open 7 days a week, 00:00–23:59:59, so `is_open()` is always `True`. Watchlist is `("BTCINR",)` only.
+- **Data source**: `app/data/crypto_data.py` — CoinDCX's public REST API (`api.coindcx.com` / `public.coindcx.com`), chosen deliberately over yfinance's crypto tickers because it's an *Indian* exchange's own INR order book, matching the same "Indian exchange only" stance the rest of this app already takes for equities and options. No API key needed for market data.
+- **PI (Pi Network) deliberately excluded**: as of this build it isn't listed on any major/vetted Indian exchange (CoinDCX, WazirX, Bitbns, ZebPay) — the only Indian venue found was Flitpay, a much smaller, less-established platform not worth depending on for trading data yet.
+- **Concurrent, independent portfolios**: `execution_engine.get_active_portfolio()` is exchange-scoped, and `session_runner.SessionRunner` ticks every currently-eligible exchange each cycle — NSE only during its own session hours (live mode) or its own replay window (replay mode), CRYPTO_INDIA always, regardless of the other's state. There's no single global "active session" anymore; NSE and crypto each keep compounding independently. Crypto's session never force-closes on a schedule the way NSE's does — in replay mode its cached candle history loops instead of running out (see `market_data.py`'s `advance()`), so it never reports "session exhausted".
+- **Cost model**: `app/trading/costs.py`'s `CRYPTO_INDIA` profile — CoinDCX's 0.2% retail spot fee, 18% GST on that fee, and 1% TDS on sell-side turnover under Income Tax Act Section 194S (a real, material cost for Indian crypto trades, not a securities-market charge that happens not to apply).
+- **Dashboard**: `frontend/pages/2_Crypto.py` — same KPI/positions/trades layout as the NSE `Home.py` page, scoped to `CRYPTO_INDIA`.
+- **API**: every relevant endpoint (`/portfolio`, `/watchlist`, `/planner/allocation-plan`, `/session/close`) takes an `exchange` query param (default `NSE`, so every existing caller is unaffected); `/market/chart/{symbol}` and `/analyze/{symbol}` resolve a symbol's exchange automatically.
+
+Not yet done: PI coin (see above), a crypto-specific track record in the reliability tracker (currently shares trust scores with NSE), and options/positional analysis for crypto (the Positional Picks system below is NSE-equity-only).
+
+## Positional options picks
+
+A second, separate pipeline alongside the intraday session above — screens a wider universe of liquid NSE large-caps (`POSITIONAL_UNIVERSE` in `.env`, not the 3-symbol intraday `WATCHLIST`) for multi-day/week options trades, and ranks candidates instead of producing one verdict at a time. See `docs/POSITIONAL_OPTIONS_ENHANCEMENT_PLAN.md` for the full design rationale.
+
+- **5 new analyst agents** (`app/agents/analysts/`): IV & Options Chain Analyst (IV rank, put-call OI ratio, max pain), Volatility Regime Analyst (implied vs realized vol, term structure), Catalyst & Events Analyst (earnings/expiry/RBI MPC dates), Liquidity Analyst (bid-ask spread/OI depth as a tradability gate), Relative Strength Analyst (vs the Nifty 50 benchmark) — run in `POSITIONAL_TIER`, only as part of a positional scan, never the intraday tick loop.
+- **Options chain data** (`app/data/options_data.py`): live NSE option-chain fetch (strikes, OI, IV, LTP) — not available via yfinance, so this talks to NSE's own JSON API directly. Degrades to `None` (agents fall back to a clearly-labeled low-confidence read) if NSE is unreachable or rate-limits.
+- **Positional consensus mode**: `compute_consensus(..., mode="positional")` in `app/consensus/trust_weighted_consensus.py` uses a separate `POSITIONAL_EXPERTISE_RELEVANCE` weighting table (fundamentals/macro weighted up, the intraday-only Algo Signal weighted down) and higher, not-yet-backtested decisive thresholds (`POSITIONAL_DECISIVE_THRESHOLD`) — intraday behavior (`mode` omitted) is completely unchanged.
+- **Strategy Architect** (`app/agents/strategy_architect.py`, `app/tools/strategy_builder.py`): once the consensus verdict is final, picks the actual options structure (long call/put, debit spread, or credit spread) from the winning direction + the Volatility Regime Analyst's IV-cheap/rich read, with strikes, expiry, max loss/profit, breakeven, and a payoff curve.
+- **API**: `POST /positional/scan` runs the full committee across the universe (several minutes — ~19 agents × N symbols); `GET /positional/picks` returns the latest ranked scan without re-running it; `GET /positional/picks/{symbol}` is the per-symbol drill-down (agent votes, structure, conviction trend across past scans).
+- **Dashboard**: `frontend/pages/1_Positional_Picks.py` — ranked candidate table, payoff diagram, conviction trend, and full agent vote breakdown per pick.
+
+Not yet done (see the enhancement plan's phased roadmap): a once-daily automatic schedule for the scan (currently on-demand only), backtesting the positional decisive threshold against real scan history, and a separate positional-specific trust score in the reliability tracker (currently shares the intraday one).
 
 ## What's not built (explicitly out of scope for this hackathon build)
 

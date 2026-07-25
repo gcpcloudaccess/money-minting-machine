@@ -12,12 +12,16 @@ from app.trading.costs import compute_costs
 
 
 def get_active_portfolio(db: Session, exchange: str | None = None) -> Portfolio:
-    """Returns the active session, creating a fresh one tagged for `exchange`
-    (default NSE) if none exists. Does NOT close a mismatched-exchange active
-    portfolio itself - that requires fetching that exchange's own closing
-    prices, which needs a market data provider this module doesn't have.
-    See session_runner.run_tick() for the actual exchange-switch orchestration."""
-    portfolio = db.query(Portfolio).filter_by(status="active").order_by(Portfolio.id.desc()).first()
+    """Returns the active session FOR THIS EXCHANGE (default NSE), creating a
+    fresh one if none exists. Each exchange keeps its own independent active
+    portfolio - since CRYPTO_INDIA trades 24/7 and NSE only during its own
+    session hours (see app/data/exchanges.py), there is no longer a single
+    global "the active portfolio": NSE and CRYPTO_INDIA can both be active at
+    once, ticking independently (see app/orchestration/session_runner.py).
+    Every existing caller that omits `exchange` keeps getting the NSE
+    portfolio, unchanged."""
+    scope = exchange or "NSE"
+    portfolio = db.query(Portfolio).filter_by(status="active", exchange=scope).order_by(Portfolio.id.desc()).first()
     if portfolio is None:
         settings = get_settings()
         portfolio = Portfolio(
@@ -25,7 +29,7 @@ def get_active_portfolio(db: Session, exchange: str | None = None) -> Portfolio:
             starting_capital=settings.starting_capital_inr,
             leverage=settings.leverage,
             status="active",
-            exchange=exchange or "NSE",
+            exchange=scope,
         )
         db.add(portfolio)
         db.commit()
