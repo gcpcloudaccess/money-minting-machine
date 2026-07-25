@@ -81,19 +81,22 @@ def inject_base_css() -> None:
             white-space: nowrap;
         }
         .ic-metric-value {
-            /* A 6-across KPI strip leaves ~140-160px per card - a bare 1.45rem
-               never fit a real number like "10,001.07" and was breaking mid-digit
-               (no spaces to wrap on, so the browser hard-split the string).
-               clamp() scales the font down to fit instead of a fixed size, and
-               nowrap forbids wrapping - so a too-long value is never split
-               across lines. Deliberately NOT clipped/ellipsized: a money figure
-               that's silently cut off is worse than one that's visually tight,
-               so in a genuine worst case it overflows the card rather than
-               hiding digits. */
+            /* clamp() scales the font down as the card narrows, so most values
+               shrink to fit rather than overflow. But nowrap + a floor on the
+               shrink range was the actual bug: once a value (e.g. a long BTC/INR
+               figure like "50,12,345.67") hit the clamp() floor it kept refusing
+               to wrap and spilled out of the card instead. Fix: allow the value
+               to wrap onto a second line as the last-resort safety net instead of
+               spilling past the card edge - still never truncated/ellipsized
+               (a money figure silently cut off is worse than one on two lines),
+               but now it wraps rather than escaping the box. overflow-wrap
+               handles the rare case where a single unbroken run of digits is
+               still wider than the card. */
             font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-weight: 700;
-            font-size: clamp(0.95rem, 1.8vw, 1.45rem);
+            font-size: clamp(0.85rem, 1.6vw, 1.45rem);
             color: #F8FAFC; margin-top: 0.28rem; letter-spacing: -0.01em;
-            white-space: nowrap;
+            white-space: normal; overflow-wrap: break-word; word-break: break-word;
+            max-width: 100%;
         }
         .ic-metric-delta {
             font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-size: 0.8rem; font-weight: 600;

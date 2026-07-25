@@ -74,19 +74,33 @@ def _resolve_pair(market: str) -> str | None:
     return None
 
 
-def get_candles(market: str, interval: str = "5m", limit: int = 200) -> pd.DataFrame | None:
+def get_candles(
+    market: str, interval: str = "5m", limit: int = 200,
+    start_time_ms: int | None = None, end_time_ms: int | None = None,
+) -> pd.DataFrame | None:
     """OHLCV candles for `market` (e.g. "BTCINR"), shaped exactly like
     market_data.py's yfinance-sourced DataFrames (Open/High/Low/Close/Volume
     columns, ascending DatetimeIndex) so every downstream analyst/tool that
     consumes `bars`/`daily_bars` works unmodified regardless of whether the
     symbol came from yfinance or CoinDCX. Returns None if the pair can't be
-    resolved or the candles request fails."""
+    resolved or the candles request fails.
+
+    start_time_ms/end_time_ms let a caller page backward through history
+    beyond CoinDCX's single-request cap (1000 candles) - see
+    scripts/fetch_backtest_data.py, which uses this to assemble a longer
+    CSV for backtesting than any one request could return."""
     pair = _resolve_pair(market)
     if pair is None:
         return None
 
+    params = {"pair": pair, "interval": interval, "limit": limit}
+    if start_time_ms is not None:
+        params["startTime"] = start_time_ms
+    if end_time_ms is not None:
+        params["endTime"] = end_time_ms
+
     try:
-        resp = httpx.get(CANDLES_URL, params={"pair": pair, "interval": interval, "limit": limit}, timeout=_TIMEOUT)
+        resp = httpx.get(CANDLES_URL, params=params, timeout=_TIMEOUT)
         resp.raise_for_status()
         rows = resp.json()
     except Exception:

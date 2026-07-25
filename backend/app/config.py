@@ -66,16 +66,15 @@ class Settings(BaseSettings):
     macro_data_as_of: str = ""  # ISO date, e.g. "2026-06-30"
 
     # ---------------------------------------------------------------- positional options
-    # A separate, wider universe from `watchlist` (which stays scoped to the 3
-    # intraday instruments) - positional picks need a screenable set of liquid,
-    # optionable NSE large-caps to actually produce a ranked "best pick" from.
-    # Starting set: liquid, heavily-traded F&O large-caps across sectors, not
-    # the full Nifty 50 - expand freely, this is just a usable default.
-    positional_universe: str = (
-        "RELIANCE.NS,HDFCBANK.NS,ICICIBANK.NS,INFY.NS,TCS.NS,LT.NS,SBIN.NS,AXISBANK.NS,"
-        "KOTAKBANK.NS,BHARTIARTL.NS,ITC.NS,HINDUNILVR.NS,MARUTI.NS,SUNPHARMA.NS,TATAMOTORS.NS,"
-        "TATASTEEL.NS,BAJFINANCE.NS,ADANIENT.NS,ULTRACEMCO.NS,TITAN.NS"
-    )
+    # Index options only - Nifty 50 (^NSEI) and Bank Nifty (^NSEBANK), NOT
+    # individual stocks. This was originally a 20-stock large-cap universe, but
+    # the user doesn't trade individual stocks, only index and BTC positions -
+    # and index options are the most liquid F&O instruments on NSE anyway, so
+    # narrowing to just these two loses nothing for this use case.
+    # app/data/options_data.py's _INDEX_SYMBOL_MAP and app/data/calendar_data.py's
+    # is_index check already special-case both of these for the NSE index option
+    # chain endpoint and weekly (not monthly) expiry cadence.
+    positional_universe: str = "^NSEI,^NSEBANK"
 
     # NSE has changed the weekday for index weekly options expiry more than
     # once (Thursday -> Tuesday as of this build) - see app/data/calendar_data.py.

@@ -60,7 +60,7 @@ Covers the mandatory consensus algorithm (proves it is *not* majority voting / p
 | Memory & Knowledge (PostgreSQL/PGVector/Redis) | SQLite via SQLAlchemy (`DATABASE_URL` swappable for Postgres later); decision/vote history queried directly (no vector store dependency); no separate cache layer (single process) |
 | Monitoring & Governance (Prometheus/Grafana/LangSmith/Auth0) | Structured logging + `AuditLog` DB table only — not built; noted here as the production upgrade path |
 | External Integrations (Broker APIs) | Simulated execution engine (`app/trading/execution_engine.py`) with a realistic Indian intraday cost model (`app/trading/costs.py`: brokerage, STT, exchange charges, SEBI charges, stamp duty, GST) — no live broker, this is paper trading |
-| User Interface | Streamlit, single-page dashboard (`frontend/Home.py`) — portfolio KPIs, price chart, Overview/Positions & Trades/Planner & Risk/Reports tabs, and a session-control side panel (auto-trading toggle, PDF report, watchlist pulse, force-close) |
+| User Interface | Streamlit, single consolidated dashboard (`frontend/Home.py`) — index (Nifty 50) and BTC panels side by side (live price, Algo Recommendation, session P&L), open positions, recent trades, and a compact session-control side panel (auto-trading toggle, index options scan, force-close) |
 
 ### The mandatory consensus algorithm
 
@@ -72,6 +72,25 @@ weight = confidence × expertise_relevance(context) × trust_score(persisted his
 
 `agreement_adjustment` discounts agents that just agree with the room (redundant signal) and amplifies agents that disagree with the room *and* have a strong track record (the "reliable contrarian" case from the spec). The final `directional_confidence` blends the winning action's *dominance* (share of trust-weighted influence) with the *conviction* of the agents backing it (their own confidence × trust) — see `backend/tests/test_consensus.py` for the proofs that this diverges from both majority voting and plain confidence averaging.
 
+## Backtesting (read before considering live trading)
+
+Before connecting this to a real broker/exchange account (e.g. Delta Exchange for crypto derivatives), run a real backtest - the consensus thresholds in this build were tuned to make the demo actually produce trades, not validated for real-money edge, and no historical accuracy number exists anywhere in this repo until you generate one.
+
+```bash
+# 1. Fetch real historical candles from CoinDCX (needs real internet access - won't work from a network-sandboxed environment)
+cd backend && python scripts/fetch_backtest_data.py --market BTCINR --interval 5m --days 90
+
+# 2. Run the backtest
+cd .. && python run_backtest.py --csv backend/data_cache/backtest_BTCINR_5m.csv
+```
+
+This replays historical bars through the **real production pipeline** (`TechnicalAnalyst`, `RiskAnalyst`, `AlgoSignalAnalyst`, the Debate Agent, all 4 critics, and the actual `trust_weighted_consensus` math - not a reimplementation), simulates a portfolio against it with the real `CRYPTO_INDIA` cost model, and reports total return, CAGR, win rate, Sharpe ratio, max drawdown, and — critically — **return vs simply buying and holding the asset over the same window**. If alpha vs buy-and-hold is negative, the algorithm did worse than doing nothing.
+
+**Read `app/backtest/engine.py`'s module docstring before trusting the output.** Two honest limitations baked into every run:
+
+- **Macro/Sentiment/Geopolitical/Government Policy/Fundamental/Astrological analysts are excluded.** Each either needs LIVE news/company-financials context that can't be validly reconstructed for a historical bar (feeding today's headlines into a bar from 3 months ago isn't a neutral simulation), or doesn't meaningfully apply to a cryptocurrency (financial statements, planetary positions). The backtest measures the price/risk/model-driven core of the committee, not the full intraday roster.
+- **Reliability trust scores are held at the neutral 0.5 prior throughout.** There's no historical trust data to bootstrap from, so live behavior will diverge from this backtest as the system builds a real track record (see `app/consensus/reliability_tracker.py`).
+
 ## Crypto (BTC)
 
 A second, fully independent trading exchange alongside NSE — added specifically so trades keep executing on weekends and outside NSE's 09:15–15:30 IST session, which a single India-equities-only build otherwise has no way to do.
@@ -81,21 +100,21 @@ A second, fully independent trading exchange alongside NSE — added specificall
 - **PI (Pi Network) deliberately excluded**: as of this build it isn't listed on any major/vetted Indian exchange (CoinDCX, WazirX, Bitbns, ZebPay) — the only Indian venue found was Flitpay, a much smaller, less-established platform not worth depending on for trading data yet.
 - **Concurrent, independent portfolios**: `execution_engine.get_active_portfolio()` is exchange-scoped, and `session_runner.SessionRunner` ticks every currently-eligible exchange each cycle — NSE only during its own session hours (live mode) or its own replay window (replay mode), CRYPTO_INDIA always, regardless of the other's state. There's no single global "active session" anymore; NSE and crypto each keep compounding independently. Crypto's session never force-closes on a schedule the way NSE's does — in replay mode its cached candle history loops instead of running out (see `market_data.py`'s `advance()`), so it never reports "session exhausted".
 - **Cost model**: `app/trading/costs.py`'s `CRYPTO_INDIA` profile — CoinDCX's 0.2% retail spot fee, 18% GST on that fee, and 1% TDS on sell-side turnover under Income Tax Act Section 194S (a real, material cost for Indian crypto trades, not a securities-market charge that happens not to apply).
-- **Dashboard**: `frontend/pages/2_Crypto.py` — same KPI/positions/trades layout as the NSE `Home.py` page, scoped to `CRYPTO_INDIA`.
+- **Dashboard**: BTC has its own panel side by side with the Nifty 50 panel in the single consolidated `frontend/Home.py` dashboard (live price, Algo Recommendation, session P&L) — not a separate page.
 - **API**: every relevant endpoint (`/portfolio`, `/watchlist`, `/planner/allocation-plan`, `/session/close`) takes an `exchange` query param (default `NSE`, so every existing caller is unaffected); `/market/chart/{symbol}` and `/analyze/{symbol}` resolve a symbol's exchange automatically.
 
 Not yet done: PI coin (see above), a crypto-specific track record in the reliability tracker (currently shares trust scores with NSE), and options/positional analysis for crypto (the Positional Picks system below is NSE-equity-only).
 
 ## Positional options picks
 
-A second, separate pipeline alongside the intraday session above — screens a wider universe of liquid NSE large-caps (`POSITIONAL_UNIVERSE` in `.env`, not the 3-symbol intraday `WATCHLIST`) for multi-day/week options trades, and ranks candidates instead of producing one verdict at a time. See `docs/POSITIONAL_OPTIONS_ENHANCEMENT_PLAN.md` for the full design rationale.
+A second, separate pipeline alongside the intraday session above — screens Nifty 50 and Bank Nifty **index options only** (`POSITIONAL_UNIVERSE=^NSEI,^NSEBANK` in `.env`, not the 3-symbol intraday `WATCHLIST`) for multi-day/week options trades, and ranks candidates instead of producing one verdict at a time. Originally built around a 20-stock large-cap universe; narrowed to index-only since that's the actual use case (no individual-stock trading) and index options are the most liquid F&O instruments on NSE anyway. See `docs/POSITIONAL_OPTIONS_ENHANCEMENT_PLAN.md` for the full design rationale (written before the index-only narrowing).
 
 - **5 new analyst agents** (`app/agents/analysts/`): IV & Options Chain Analyst (IV rank, put-call OI ratio, max pain), Volatility Regime Analyst (implied vs realized vol, term structure), Catalyst & Events Analyst (earnings/expiry/RBI MPC dates), Liquidity Analyst (bid-ask spread/OI depth as a tradability gate), Relative Strength Analyst (vs the Nifty 50 benchmark) — run in `POSITIONAL_TIER`, only as part of a positional scan, never the intraday tick loop.
 - **Options chain data** (`app/data/options_data.py`): live NSE option-chain fetch (strikes, OI, IV, LTP) — not available via yfinance, so this talks to NSE's own JSON API directly. Degrades to `None` (agents fall back to a clearly-labeled low-confidence read) if NSE is unreachable or rate-limits.
 - **Positional consensus mode**: `compute_consensus(..., mode="positional")` in `app/consensus/trust_weighted_consensus.py` uses a separate `POSITIONAL_EXPERTISE_RELEVANCE` weighting table (fundamentals/macro weighted up, the intraday-only Algo Signal weighted down) and higher, not-yet-backtested decisive thresholds (`POSITIONAL_DECISIVE_THRESHOLD`) — intraday behavior (`mode` omitted) is completely unchanged.
 - **Strategy Architect** (`app/agents/strategy_architect.py`, `app/tools/strategy_builder.py`): once the consensus verdict is final, picks the actual options structure (long call/put, debit spread, or credit spread) from the winning direction + the Volatility Regime Analyst's IV-cheap/rich read, with strikes, expiry, max loss/profit, breakeven, and a payoff curve.
-- **API**: `POST /positional/scan` runs the full committee across the universe (several minutes — ~19 agents × N symbols); `GET /positional/picks` returns the latest ranked scan without re-running it; `GET /positional/picks/{symbol}` is the per-symbol drill-down (agent votes, structure, conviction trend across past scans).
-- **Dashboard**: `frontend/pages/1_Positional_Picks.py` — ranked candidate table, payoff diagram, conviction trend, and full agent vote breakdown per pick.
+- **API**: `POST /positional/scan` runs the full committee across the universe (a couple of minutes — ~19 agents × 2 symbols); `GET /positional/picks` returns the latest ranked scan without re-running it; `GET /positional/picks/{symbol}` is the per-symbol drill-down (agent votes, structure, conviction trend across past scans) — not surfaced in the UI, but queryable directly.
+- **Dashboard**: surfaced as a single compact line per index under its panel in `frontend/Home.py` (direction, structure, expiry, max loss/profit) — triggered via the "Scan Index Options" button in the side panel. The full ranked table, payoff diagram, conviction trend, and per-agent vote breakdown were dropped from the UI in favor of an essentials-only single dashboard; they're still available via the API endpoints above.
 
 Not yet done (see the enhancement plan's phased roadmap): a once-daily automatic schedule for the scan (currently on-demand only), backtesting the positional decisive threshold against real scan history, and a separate positional-specific trust score in the reliability tracker (currently shares the intraday one).
 
