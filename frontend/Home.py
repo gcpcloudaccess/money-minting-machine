@@ -53,7 +53,11 @@ def render_exchange_panel(title: str, icon: str, symbols: list[tuple[str, dict |
     (it's one portfolio, not one per symbol) - shown once at the top, then
     each symbol gets its own compact price + Algo Call row underneath. This
     keeps the row wide enough to never wrap character-by-character, however
-    many symbols a given exchange's watchlist has (NSE has 3, crypto has 1)."""
+    many symbols a given exchange's watchlist has (NSE has 3, crypto has 1).
+    Open Positions for this exchange render inside the same panel (instead of
+    a separate full-width section below) - Streamlit stretches side-by-side
+    columns to equal height, so a 1-symbol panel (BTC) would otherwise leave
+    a large dead gap under a 3-symbol panel (NSE) for no reason."""
     with st.container(border=True):
         st.markdown(f'<div class="ic-panel-title">{icon} {title}</div>', unsafe_allow_html=True)
 
@@ -71,12 +75,12 @@ def render_exchange_panel(title: str, icon: str, symbols: list[tuple[str, dict |
             badge_html = verdict_badge(verdict)
             st.markdown(
                 f"""
-                <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center; padding:0.65rem 1rem; margin-top:0.6rem; margin-bottom:0;">
-                    <div>
+                <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:nowrap; padding:0.65rem 1rem; margin-top:0.6rem; margin-bottom:0;">
+                    <div style="white-space:nowrap;">
                         <span style="font-weight:700; color:#F8FAFC;">{label}</span>
                         <span style="margin-left:0.6rem;">{badge_html}</span>
                     </div>
-                    <div style="text-align:right; font-family:'JetBrains Mono','SF Mono',monospace;">
+                    <div style="text-align:right; font-family:'JetBrains Mono','SF Mono',monospace; white-space:nowrap;">
                         <div style="color:#F8FAFC; font-weight:600;">{price_txt}</div>
                         <div style="color:#5B6B84; font-size:0.72rem;">{conf_txt}</div>
                     </div>
@@ -95,11 +99,31 @@ def render_exchange_panel(title: str, icon: str, symbols: list[tuple[str, dict |
                     f"max loss {_fmt_inr_or_uncapped(s['max_loss'])} / max profit {_fmt_inr_or_uncapped(s['max_profit'])}"
                 )
 
+        st.markdown('<div class="ic-panel-title">Open Positions</div>', unsafe_allow_html=True)
+        if portfolio["positions"]:
+            for p in portfolio["positions"]:
+                st.markdown(
+                    f"""
+                    <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center; margin-top:0.4rem; margin-bottom:0;">
+                        <div>
+                            <span style="font-weight:700; color:#F8FAFC;">{p['symbol']}</span>
+                            <span class="ic-badge" style="margin-left:0.5rem; background:#0B2A24;color:#2DD4BF;border:1px solid #14B8A6;">{p['side']}</span>
+                        </div>
+                        <div style="font-family:'JetBrains Mono','SF Mono',monospace; color:#8B96A8; font-size:0.85rem;">
+                            Qty {p['quantity']:g} @ ₹{p['avg_price']:,.2f}
+                        </div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+        else:
+            st.caption("No open positions.")
+
 
 nse_symbols = [
     ("Nifty 50", _find(nse_watchlist, "^NSEI")),
-    ("Gold (GOLDBEES)", _find(nse_watchlist, "GOLDBEES.NS")),
-    ("Silver (SILVERBEES)", _find(nse_watchlist, "SILVERBEES.NS")),
+    ("Gold", _find(nse_watchlist, "GOLDBEES.NS")),
+    ("Silver", _find(nse_watchlist, "SILVERBEES.NS")),
 ]
 crypto_symbols = [("BTC", _find(crypto_watchlist, "BTCINR"))]
 
@@ -111,30 +135,6 @@ with main_col:
         render_exchange_panel("NSE — Index, Gold, Silver", "📈", nse_symbols, nse_portfolio)
     with p2:
         render_exchange_panel("BTC (CoinDCX)", "₿", crypto_symbols, crypto_portfolio)
-
-    st.divider()
-
-    st.subheader("Open Positions")
-    all_positions = [(p, "NSE") for p in nse_portfolio["positions"]] + [(p, "CRYPTO_INDIA") for p in crypto_portfolio["positions"]]
-    if all_positions:
-        for p, ex in all_positions:
-            st.markdown(
-                f"""
-                <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center;">
-                    <div>
-                        <span style="font-weight:700; color:#F8FAFC; font-size:1.05rem;">{p['symbol']}</span>
-                        <span class="ic-badge" style="margin-left:0.6rem; background:#0B2A24;color:#2DD4BF;border:1px solid #14B8A6;">{p['side']}</span>
-                        <span class="ic-badge" style="margin-left:0.4rem; background:#131B2E;color:#93C5FD;border:1px solid #1E293B;">{ex}</span>
-                    </div>
-                    <div style="font-family:'JetBrains Mono','SF Mono',monospace; color:#8B96A8;">
-                        Qty {p['quantity']:g} @ ₹{p['avg_price']:,.2f}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
-        st.info("No open positions.")
 
     st.write("")
     st.subheader("Recent Trades")
@@ -210,12 +210,3 @@ with side_col, st.container(border=True):
 
     st.markdown('<div class="ic-panel-title">Market Status</div>', unsafe_allow_html=True)
     st.caption(f"NSE: {'open' if exchange_status.get('NSE') else 'closed'} · CoinDCX: {'open' if exchange_status.get('CRYPTO_INDIA') else 'closed'} (always open)")
-
-    st.markdown('<div class="ic-panel-title">Danger Zone</div>', unsafe_allow_html=True)
-    close_choice = st.selectbox("Force close which session?", ["Nifty 50 (NSE)", "BTC (CoinDCX)"], label_visibility="collapsed")
-    close_exchange = "NSE" if close_choice.startswith("Nifty") else "CRYPTO_INDIA"
-    if st.button("Force Close Session", width="stretch"):
-        with st.spinner("Closing session..."):
-            post("/session/close", exchange=close_exchange)
-        st.success(f"{close_choice} session closed.")
-        st.rerun()
