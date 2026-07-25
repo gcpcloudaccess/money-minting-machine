@@ -136,34 +136,6 @@ with main_col:
     with p2:
         render_exchange_panel("BTC (CoinDCX)", "₿", crypto_symbols, crypto_portfolio)
 
-    st.write("")
-    st.subheader("Recent Trades")
-    st.caption("Most recent 15 across both the index and BTC portfolios.")
-    all_trades = get("/trades") or []
-    recent_trades = list(reversed(all_trades))[:15]
-    if recent_trades:
-        for t in recent_trades:
-            action_color = "#2DD4BF" if t["action"] == "BUY" else "#FB7185"
-            ex_tag = t.get("exchange") or "NSE"
-            st.markdown(
-                f"""
-                <div class="ic-card" style="display:flex; align-items:center; justify-content:space-between;">
-                    <div>
-                        <span style="color:#5B6B84; font-size:0.82rem; font-family:'JetBrains Mono','SF Mono',monospace;">{t['timestamp']}</span>
-                        <span style="color:{action_color}; font-weight:700; margin-left:0.7rem;">{t['action']}</span>
-                        <span style="font-weight:700; color:#F8FAFC; margin-left:0.4rem;">{t['symbol']}</span>
-                        <span class="ic-badge" style="margin-left:0.5rem; background:#131B2E;color:#93C5FD;border:1px solid #1E293B;">{ex_tag}</span>
-                    </div>
-                    <div style="font-family:'JetBrains Mono','SF Mono',monospace; color:#8B96A8; font-size:0.88rem;">
-                        Qty {t['quantity']:g} @ ₹{t['price']:,.2f} · costs ₹{t['total_costs']:,.2f}
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-    else:
-        st.markdown('<div class="ic-card">No trades yet.</div>', unsafe_allow_html=True)
-
 # ================================================================== RIGHT: compact control panel
 with side_col, st.container(border=True):
     st.markdown('<div class="ic-panel-title">Auto-Trading</div>', unsafe_allow_html=True)
