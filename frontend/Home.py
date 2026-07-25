@@ -1,6 +1,6 @@
-"""Single consolidated dashboard: index (Nifty 50) + BTC side by side, essentials
-only. Two independent, concurrently-active paper portfolios (NSE session-hours
-for the index, CoinDCX/CRYPTO_INDIA 24/7 for BTC - see
+"""Single consolidated dashboard: NSE (Nifty 50 index + gold/silver ETF proxies)
++ BTC side by side, essentials only. Two independent, concurrently-active
+paper portfolios (NSE session-hours, CoinDCX/CRYPTO_INDIA 24/7 - see
 app/orchestration/session_runner.py) rendered on one page rather than split
 across separate tabs. Deliberately omits payoff diagrams, agent-by-agent vote
 tables, and conviction-trend charts - those live in the API
@@ -14,9 +14,7 @@ from theme import inject_base_css, metric_card, page_header, tone_for, verdict_b
 
 st.set_page_config(page_title="Money Minting Machine", page_icon="📊", layout="wide")
 inject_base_css()
-page_header("📊", "Money Minting Machine", "Index (Nifty 50) + BTC — trust-weighted multi-agent Algo, paper trading only")
-
-NO_DECISION_BADGE = '<span class="ic-badge" style="background:#161B27;color:#5B6B84;border:1px solid #2A3140;">NO DECISION YET</span>'
+page_header("📊", "Money Minting Machine", "Index, gold/silver (NSE) + BTC — trust-weighted multi-agent Algo, paper trading only")
 
 app_settings = get("/settings")
 tick_status = get("/session/tick-status")
@@ -33,8 +31,11 @@ nse_portfolio = get("/portfolio", exchange="NSE")
 crypto_portfolio = get("/portfolio", exchange="CRYPTO_INDIA")
 nse_watchlist = get("/watchlist", exchange="NSE", silent=True) or []
 crypto_watchlist = get("/watchlist", exchange="CRYPTO_INDIA", silent=True) or []
-index_item = next((i for i in nse_watchlist if i["symbol"] == "^NSEI"), None)
-btc_item = next((i for i in crypto_watchlist if i["symbol"] == "BTCINR"), None)
+
+
+def _find(watchlist: list[dict], symbol: str) -> dict | None:
+    return next((i for i in watchlist if i["symbol"] == symbol), None)
+
 
 positional = get("/positional/picks", silent=True) or {"picks": []}
 picks_by_symbol = {p["symbol"]: p for p in positional.get("picks", [])}
@@ -46,49 +47,70 @@ def _fmt_inr_or_uncapped(v) -> str:
     return f"₹{v:,.0f}" if v is not None else "uncapped"
 
 
-def render_asset_panel(title: str, icon: str, symbol: str, item: dict | None, portfolio: dict) -> None:
+def render_exchange_panel(title: str, icon: str, symbols: list[tuple[str, dict | None]], portfolio: dict) -> None:
+    """symbols: list of (display_label, watchlist_item_or_None). Portfolio
+    Total Value / Session P&L is shared across every symbol in the exchange
+    (it's one portfolio, not one per symbol) - shown once at the top, then
+    each symbol gets its own compact price + Algo Call row underneath. This
+    keeps the row wide enough to never wrap character-by-character, however
+    many symbols a given exchange's watchlist has (NSE has 3, crypto has 1)."""
     with st.container(border=True):
         st.markdown(f'<div class="ic-panel-title">{icon} {title}</div>', unsafe_allow_html=True)
 
-        price_txt = f"₹{item['price']:,.2f}" if item and item.get("price") else "—"
-        verdict = item.get("latest_verdict") if item else None
-        conf_txt = f"{item['latest_confidence']:.1f}% confidence" if item and item.get("latest_confidence") is not None else "awaiting first tick"
-        badge_html = verdict_badge(verdict) if verdict else NO_DECISION_BADGE
-
-        c1, c2, c3, c4 = st.columns(4)
-        c1.markdown(metric_card("Live Price", price_txt), unsafe_allow_html=True)
+        c1, c2 = st.columns(2)
+        c1.markdown(metric_card("Total Value", f"₹{portfolio['total_value']:,.2f}", tone=tone_for(portfolio["net_profit"])), unsafe_allow_html=True)
         c2.markdown(
-            f'<div class="ic-metric-card"><div class="ic-metric-label">Algo Recommendation</div>'
-            f'<div style="margin-top:0.35rem;">{badge_html}</div>'
-            f'<div class="ic-metric-delta" style="color:#8B96A8;">{conf_txt}</div></div>',
-            unsafe_allow_html=True,
-        )
-        c3.markdown(metric_card("Total Value", f"₹{portfolio['total_value']:,.2f}", tone=tone_for(portfolio["net_profit"])), unsafe_allow_html=True)
-        c4.markdown(
-            metric_card("P&L (session)", f"₹{portfolio['net_profit']:,.2f}", delta=f"{portfolio['total_return_pct']:+.2f}%", tone=tone_for(portfolio["net_profit"])),
+            metric_card("Session P&L", f"₹{portfolio['net_profit']:,.2f}", delta=f"{portfolio['total_return_pct']:+.2f}%", tone=tone_for(portfolio["net_profit"])),
             unsafe_allow_html=True,
         )
 
-        if item and item.get("used_comex_proxy") and item.get("comex_price"):
-            st.caption(f"NSE closed — price shown is a live COMEX {item.get('comex_symbol')} feed proxy (analysis only, not tradable).")
-
-        pick = picks_by_symbol.get(symbol)
-        if pick and pick.get("strategy"):
-            s = pick["strategy"]
-            st.caption(
-                f"Options pick: {pick['direction']} · {s['structure_type']} · exp {s['expiry']} · "
-                f"max loss {_fmt_inr_or_uncapped(s['max_loss'])} / max profit {_fmt_inr_or_uncapped(s['max_profit'])}"
+        for label, item in symbols:
+            price_txt = f"₹{item['price']:,.2f}" if item and item.get("price") else "—"
+            verdict = item.get("latest_verdict") if item else None
+            conf_txt = f"{item['latest_confidence']:.1f}% confidence" if item and item.get("latest_confidence") is not None else "no tick yet"
+            badge_html = verdict_badge(verdict)
+            st.markdown(
+                f"""
+                <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center; padding:0.65rem 1rem; margin-top:0.6rem; margin-bottom:0;">
+                    <div>
+                        <span style="font-weight:700; color:#F8FAFC;">{label}</span>
+                        <span style="margin-left:0.6rem;">{badge_html}</span>
+                    </div>
+                    <div style="text-align:right; font-family:'JetBrains Mono','SF Mono',monospace;">
+                        <div style="color:#F8FAFC; font-weight:600;">{price_txt}</div>
+                        <div style="color:#5B6B84; font-size:0.72rem;">{conf_txt}</div>
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
             )
+            if item and item.get("used_comex_proxy") and item.get("comex_price"):
+                st.caption(f"{label}: NSE closed — live COMEX {item.get('comex_symbol')} feed proxy (analysis only, not tradable).")
+
+            pick = picks_by_symbol.get(item["symbol"]) if item else None
+            if pick and pick.get("strategy"):
+                s = pick["strategy"]
+                st.caption(
+                    f"{label} options pick: {pick['direction']} · {s['structure_type']} · exp {s['expiry']} · "
+                    f"max loss {_fmt_inr_or_uncapped(s['max_loss'])} / max profit {_fmt_inr_or_uncapped(s['max_profit'])}"
+                )
 
 
-main_col, side_col = st.columns([2.6, 1], gap="medium")
+nse_symbols = [
+    ("Nifty 50", _find(nse_watchlist, "^NSEI")),
+    ("Gold (GOLDBEES)", _find(nse_watchlist, "GOLDBEES.NS")),
+    ("Silver (SILVERBEES)", _find(nse_watchlist, "SILVERBEES.NS")),
+]
+crypto_symbols = [("BTC", _find(crypto_watchlist, "BTCINR"))]
+
+main_col, side_col = st.columns([3.2, 1], gap="medium")
 
 with main_col:
     p1, p2 = st.columns(2, gap="medium")
     with p1:
-        render_asset_panel("Nifty 50 (NSE)", "📈", "^NSEI", index_item, nse_portfolio)
+        render_exchange_panel("NSE — Index, Gold, Silver", "📈", nse_symbols, nse_portfolio)
     with p2:
-        render_asset_panel("BTC (CoinDCX)", "₿", "BTCINR", btc_item, crypto_portfolio)
+        render_exchange_panel("BTC (CoinDCX)", "₿", crypto_symbols, crypto_portfolio)
 
     st.divider()
 

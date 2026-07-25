@@ -82,20 +82,19 @@ def inject_base_css() -> None:
         }
         .ic-metric-value {
             /* clamp() scales the font down as the card narrows, so most values
-               shrink to fit rather than overflow. But nowrap + a floor on the
-               shrink range was the actual bug: once a value (e.g. a long BTC/INR
-               figure like "50,12,345.67") hit the clamp() floor it kept refusing
-               to wrap and spilled out of the card instead. Fix: allow the value
-               to wrap onto a second line as the last-resort safety net instead of
-               spilling past the card edge - still never truncated/ellipsized
-               (a money figure silently cut off is worse than one on two lines),
-               but now it wraps rather than escaping the box. overflow-wrap
-               handles the rare case where a single unbroken run of digits is
-               still wider than the card. */
+               shrink to fit on one line. overflow-wrap:break-word is a genuine
+               last resort only - it only breaks a word if it can't otherwise
+               fit its own line, so a normal-length value never gets chopped.
+               (An earlier version also set word-break:break-word, which is
+               far more eager to break mid-word - combined with columns that
+               were simply too narrow for their content, that chopped ordinary
+               values like "23,787.00" into single-digit lines. The real fix
+               for that was giving cards more width - see frontend/Home.py's
+               2-column-per-row panel layout - not more aggressive wrapping.) */
             font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace; font-weight: 700;
             font-size: clamp(0.85rem, 1.6vw, 1.45rem);
             color: #F8FAFC; margin-top: 0.28rem; letter-spacing: -0.01em;
-            white-space: normal; overflow-wrap: break-word; word-break: break-word;
+            white-space: normal; overflow-wrap: break-word;
             max-width: 100%;
         }
         .ic-metric-delta {
@@ -106,7 +105,7 @@ def inject_base_css() -> None:
         .ic-badge {
             display: inline-flex; align-items: center; gap: 0.35rem;
             padding: 0.24rem 0.7rem; border-radius: 999px; font-size: 0.8rem; font-weight: 700;
-            letter-spacing: 0.02em;
+            letter-spacing: 0.02em; white-space: nowrap;
         }
 
         .ic-card {
