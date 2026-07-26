@@ -3,6 +3,7 @@ uvicorn[standard]>=0.34
 pydantic>=2.9
 pydantic-settings>=2.6
 sqlalchemy>=2.0
+google-cloud-firestore>=2.16  # optional alternate persistence backend - only imported when FIRESTORE_PROJECT_ID is set, see app/db/session.py
 apscheduler>=3.11
 python-dotenv>=1.0
 yfinance>=0.2.50

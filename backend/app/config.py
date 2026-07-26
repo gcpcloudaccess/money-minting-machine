@@ -18,10 +18,18 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./investment_committee.db"
 
+    # Optional alternate persistence backend: Firestore instead of the local
+    # SQLite file above. Off by default (empty string). Set this to your GCP
+    # project id to switch - see app/db/session.py and README's Persistence
+    # section. Worth turning on if this runs somewhere with an ephemeral
+    # local disk (e.g. Cloud Run without a mounted volume), since SQLite's
+    # file otherwise gets wiped on every container restart/redeploy.
+    firestore_project_id: str = ""
+
     starting_capital_inr: float = 100_000.0  # ₹1 lac paper capital
     leverage: float = 1.0  # no margin - cash-only paper trading
     session_hours: float = 4.0
-    tick_minutes: int = 10
+    tick_minutes: int = 5
     # Scoped to an India-only, single-exchange universe: the Nifty 50 index
     # directly (^NSEI - yfinance has no NSE Nifty futures data, so this is a
     # synthetic paper-only position, not a real placeable order) plus MCX
@@ -66,15 +74,15 @@ class Settings(BaseSettings):
     macro_data_as_of: str = ""  # ISO date, e.g. "2026-06-30"
 
     # ---------------------------------------------------------------- positional options
-    # Index options only - Nifty 50 (^NSEI) and Bank Nifty (^NSEBANK), NOT
-    # individual stocks. This was originally a 20-stock large-cap universe, but
-    # the user doesn't trade individual stocks, only index and BTC positions -
-    # and index options are the most liquid F&O instruments on NSE anyway, so
-    # narrowing to just these two loses nothing for this use case.
-    # app/data/options_data.py's _INDEX_SYMBOL_MAP and app/data/calendar_data.py's
-    # is_index check already special-case both of these for the NSE index option
-    # chain endpoint and weekly (not monthly) expiry cadence.
-    positional_universe: str = "^NSEI,^NSEBANK"
+    # Nifty 50 + Bank Nifty get real options-structure picks (both have listed
+    # NSE index options - see app/data/options_data.py's _INDEX_SYMBOL_MAP).
+    # Gold/Silver (GOLDBEES.NS/SILVERBEES.NS ETF proxies) and BTC (BTCINR) have
+    # no listed options chain this app can fetch, so for those the scanner
+    # still runs the full committee and produces a directional positional call
+    # (BUY/SELL/HOLD/WAIT + confidence) - it just can't attach an options
+    # structure (build_strategy_for_verdict() already returns None gracefully
+    # when there's no chain to build strikes from - see strategy_architect.py).
+    positional_universe: str = "^NSEI,^NSEBANK,GOLDBEES.NS,SILVERBEES.NS,BTCINR"
 
     # NSE has changed the weekday for index weekly options expiry more than
     # once (Thursday -> Tuesday as of this build) - see app/data/calendar_data.py.
@@ -88,6 +96,10 @@ class Settings(BaseSettings):
     # in advance) - comma-separated ISO dates, update periodically. Empty by
     # default rather than fabricated.
     rbi_mpc_dates: str = ""
+
+    @property
+    def use_firestore(self) -> bool:
+        return bool(self.firestore_project_id)
 
     @property
     def watchlist_symbols(self) -> list[str]:

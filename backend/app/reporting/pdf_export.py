@@ -11,10 +11,9 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib.units import cm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-from sqlalchemy.orm import Session
-
 from app.data import exchanges as exchange_registry
 from app.db.models import Decision, Portfolio, Trade
+from app.db.session import DbSession as Session
 
 REPORTS_DIR = Path(__file__).resolve().parents[3] / "reports"
 REPORTS_DIR.mkdir(exist_ok=True)

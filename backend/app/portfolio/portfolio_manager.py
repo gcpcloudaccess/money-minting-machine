@@ -6,12 +6,11 @@ simple and safe to reason about within a hackathon timeframe."""
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from app.agents import allocation_planner
 from app.config import get_settings
 from app.data import exchanges, fundamentals
 from app.db.models import Portfolio
+from app.db.session import DbSession as Session
 from app.portfolio import execution_advisor, position_sizing, scenario_analysis
 from app.trading import execution_engine
 

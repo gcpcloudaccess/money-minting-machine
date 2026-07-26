@@ -21,6 +21,24 @@ MARKET_FEEDS = [
 POLICY_KEYWORDS = ["RBI", "SEBI", "repo rate", "monetary policy", "budget", "tariff", "sanctions", "GST"]
 GEOPOLITICAL_KEYWORDS = ["war", "conflict", "sanctions", "election", "trade deal", "crude oil", "OPEC", "border"]
 
+# fundamentals_data.get_fundamentals(symbol)["short_name"] has nothing for
+# symbols with no yfinance company profile (a crypto pair, an ETF proxy) -
+# the naive fallback of stripping the exchange suffix off the raw ticker
+# would search literally "BTCINR" or "GOLDBEES" instead of a term that'd
+# actually surface relevant headlines. Used by both the intraday flow
+# (orchestration/supervisor.py) and the positional scanner, since both
+# GOLDBEES.NS/SILVERBEES.NS (NSE intraday watchlist) and BTCINR (crypto
+# watchlist, and now also the positional universe) hit this gap.
+SYMBOL_NEWS_QUERY_OVERRIDES = {
+    "BTCINR": "Bitcoin",
+    "GOLDBEES.NS": "gold price India",
+    "SILVERBEES.NS": "silver price India",
+}
+
+
+def symbol_news_query(symbol: str, fundamentals: dict) -> str:
+    return fundamentals.get("short_name") or SYMBOL_NEWS_QUERY_OVERRIDES.get(symbol) or symbol.split(".")[0]
+
 
 def _tag(text: str) -> list[str]:
     tags = []

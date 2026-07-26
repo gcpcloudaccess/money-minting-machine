@@ -123,9 +123,17 @@ def get_catalyst_events(symbol: str, horizon_days: int = 45) -> list[CatalystEve
     if earnings and earnings <= cutoff:
         events.append(CatalystEvent(date=earnings, kind="earnings", label=f"{symbol} earnings"))
 
-    for expiry in next_fno_expiries(symbol, count=2, today=today):
-        if expiry <= cutoff:
-            events.append(CatalystEvent(date=expiry, kind="fno_expiry", label=f"{symbol} F&O expiry"))
+    # F&O expiry only genuinely applies to symbols with a real listed options
+    # chain. next_fno_expiries() would happily compute a synthetic monthly
+    # date for anything (it has no way to know a symbol lacks F&O contracts),
+    # but fabricating an expiry catalyst for GOLDBEES/SILVERBEES/BTCINR (none
+    # of which have listed NSE options) would be a fake event, contradicting
+    # this module's own "don't fabricate what we don't have a feed for"
+    # stance. Restrict to the two index symbols that actually have one.
+    if symbol in ("^NSEI", "^NSEBANK"):
+        for expiry in next_fno_expiries(symbol, count=2, today=today):
+            if expiry <= cutoff:
+                events.append(CatalystEvent(date=expiry, kind="fno_expiry", label=f"{symbol} F&O expiry"))
 
     for mpc_date in get_rbi_mpc_dates():
         if today <= mpc_date <= cutoff:

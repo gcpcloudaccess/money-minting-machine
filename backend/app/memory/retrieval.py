@@ -12,9 +12,8 @@ toward deterministic, inspectable logic over opaque similarity search."""
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from app.db.models import Decision
+from app.db.session import DbSession as Session
 
 
 def get_relevant_history(db: Session, symbol: str, limit: int = 3) -> list[dict]:

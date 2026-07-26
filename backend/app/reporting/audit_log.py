@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from app.db.models import AuditLog
+from app.db.session import DbSession as Session
 
 
 def log_event(db: Session, event_type: str, payload: dict) -> None:

@@ -7,8 +7,6 @@ from __future__ import annotations
 
 import logging
 
-from sqlalchemy.orm import Session
-
 from app.agents.base import AnalysisContext, historical_context_summary
 from app.agents.debate_loop import run_debate
 from app.consensus import reliability_tracker
@@ -20,6 +18,7 @@ from app.data.exchanges import Exchange
 from app.data.market_data import MarketDataProvider
 from app.db.models import AgentVote as AgentVoteRow
 from app.db.models import Decision, Position
+from app.db.session import DbSession as Session
 from app.memory import retrieval
 from app.portfolio import portfolio_manager, position_sizing, scenario_analysis
 from app.reporting import alert_agent, audit_log, report_agent
@@ -103,7 +102,7 @@ def run_committee_for_symbol(
         )
 
     fundamentals = fundamentals_data.get_fundamentals(symbol)
-    company_query = fundamentals.get("short_name") or symbol.split(".")[0]
+    company_query = news_data.symbol_news_query(symbol, fundamentals)
     symbol_news = news_data.fetch_symbol_news(company_query)
     market_news = news_data.fetch_market_news()
     open_positions = _current_open_positions(db, symbol, fundamentals.get("sector"))

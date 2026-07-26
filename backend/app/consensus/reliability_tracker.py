@@ -4,9 +4,8 @@ Backs the `trust_score` factor in the consensus weight formula."""
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from app.db.models import AgentReliability
+from app.db.session import DbSession as Session
 
 
 def get_all_trust_scores(db: Session) -> dict[str, float]:

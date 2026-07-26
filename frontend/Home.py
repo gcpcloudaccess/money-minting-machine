@@ -93,11 +93,16 @@ def render_exchange_panel(title: str, icon: str, symbols: list[tuple[str, dict |
 
             pick = picks_by_symbol.get(item["symbol"]) if item else None
             if pick and pick.get("strategy"):
+                # Nifty/Bank Nifty: a real options structure (listed NSE index options).
                 s = pick["strategy"]
                 st.caption(
                     f"{label} options pick: {pick['direction']} · {s['structure_type']} · exp {s['expiry']} · "
                     f"max loss {_fmt_inr_or_uncapped(s['max_loss'])} / max profit {_fmt_inr_or_uncapped(s['max_profit'])}"
                 )
+            elif pick:
+                # Gold/Silver/BTC: no listed options chain to build a structure from,
+                # so this is a plain directional positional call instead.
+                st.caption(f"{label} positional call: {pick['direction']} · {pick['directional_confidence']:.0f}% conviction")
 
         st.markdown('<div class="ic-panel-title">Open Positions</div>', unsafe_allow_html=True)
         if portfolio["positions"]:
@@ -170,10 +175,10 @@ with side_col, st.container(border=True):
         if st.button("Refresh", width="stretch"):
             st.rerun()
 
-    st.markdown('<div class="ic-panel-title">Index Options</div>', unsafe_allow_html=True)
-    st.caption("Nifty 50 / Bank Nifty positional structure picks (scan is a few minutes — runs the full committee for each).")
-    if st.button("Scan Index Options", width="stretch"):
-        with st.spinner("Scanning Nifty 50 and Bank Nifty options..."):
+    st.markdown('<div class="ic-panel-title">Positional Calls</div>', unsafe_allow_html=True)
+    st.caption("Multi-day/week calls for Nifty 50, Bank Nifty (with options structures), Gold, Silver and BTC (directional only) — scan takes a few minutes, runs the full committee for each.")
+    if st.button("Scan Positional Calls", width="stretch"):
+        with st.spinner("Scanning Nifty 50, Bank Nifty, Gold, Silver and BTC..."):
             post("/positional/scan")
         st.success("Scan complete.")
         st.rerun()

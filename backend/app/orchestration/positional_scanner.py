@@ -21,8 +21,6 @@ from __future__ import annotations
 import logging
 import uuid
 
-from sqlalchemy.orm import Session
-
 from app.agents.base import AnalysisContext
 from app.agents.debate_loop import run_positional_debate
 from app.agents.strategy_architect import build_strategy_for_verdict
@@ -32,6 +30,7 @@ from app.consensus.trust_weighted_consensus import compute_consensus
 from app.data import calendar_data, fundamentals as fundamentals_data, news_data, options_data
 from app.data.market_data import MarketDataProvider
 from app.db.models import PositionalPick
+from app.db.session import DbSession as Session
 from app.reporting import report_agent
 
 logger = logging.getLogger("positional_scanner")
@@ -52,7 +51,7 @@ def _gather_positional_context(provider: MarketDataProvider, symbol: str, univer
     bars = provider.get_recent_bars(symbol)
 
     fundamentals = fundamentals_data.get_fundamentals(symbol)
-    company_query = fundamentals.get("short_name") or symbol.split(".")[0]
+    company_query = news_data.symbol_news_query(symbol, fundamentals)
     symbol_news = news_data.fetch_symbol_news(company_query)
     market_news = news_data.fetch_market_news()
     try:

@@ -4,9 +4,8 @@ records every trade for the audit trail."""
 
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from app.config import get_settings
+from app.db.session import DbSession as Session
 from app.db.models import Portfolio, Position, Trade
 from app.trading.costs import compute_costs
 

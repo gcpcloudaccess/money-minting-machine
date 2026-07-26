@@ -8,7 +8,6 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from sqlalchemy.orm import Session
 
 from app.agents import allocation_planner
 from app.config import get_settings
@@ -17,6 +16,7 @@ from app.data import fundamentals as fundamentals_data
 from app.data import market_data
 from app.data.market_data import MarketDataProvider
 from app.db.models import AgentVote, AuditLog, Decision, Portfolio, Position, PositionalPick, Trade
+from app.db.session import DbSession as Session
 from app.db.session import get_db, init_db
 from app.orchestration import positional_scanner, supervisor
 from app.orchestration.session_runner import SessionRunner

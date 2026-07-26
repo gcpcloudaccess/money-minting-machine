@@ -57,7 +57,7 @@ Covers the mandatory consensus algorithm (proves it is *not* majority voting / p
 | Debate & Consensus Layer | `app/agents/debate_agent.py` (Debate Agent — surfaces the strongest contradicting analyst views before critique) → 4 critics in `app/agents/critics.py` (Risk, Profit, Macro, Opportunity) → `app/consensus/trust_weighted_consensus.py` (the mandatory directional confidence-aware algorithm, combining Confidence Scoring + Directional Consensus into one weighted engine) + `app/consensus/reliability_tracker.py` (persisted Beta-updated historical reliability). Evidence Fusion is implicit in how consensus aggregates each agent's evidence list, rather than a separate agent. |
 | Portfolio Decision Layer | `app/portfolio/` — portfolio_manager, position_sizing (respects ₹1,00,000 cash-only cap, no margin), scenario_analysis, execution_advisor |
 | Reporting & Output | `app/reporting/` — report_agent (LLM "why" narrative), visualization (Plotly equity curve), alert_agent, audit_log, pdf_export (end-of-session explainable trade log PDF) |
-| Memory & Knowledge (PostgreSQL/PGVector/Redis) | SQLite via SQLAlchemy (`DATABASE_URL` swappable for Postgres later); decision/vote history queried directly (no vector store dependency); no separate cache layer (single process) |
+| Memory & Knowledge (PostgreSQL/PGVector/Redis) | SQLite via SQLAlchemy by default (`DATABASE_URL` swappable for Postgres), or Firestore as an alternate backend (`FIRESTORE_PROJECT_ID` - see Persistence section below); decision/vote history queried directly (no vector store dependency); no separate cache layer (single process) |
 | Monitoring & Governance (Prometheus/Grafana/LangSmith/Auth0) | Structured logging + `AuditLog` DB table only — not built; noted here as the production upgrade path |
 | External Integrations (Broker APIs) | Simulated execution engine (`app/trading/execution_engine.py`) with a realistic Indian intraday cost model (`app/trading/costs.py`: brokerage, STT, exchange charges, SEBI charges, stamp duty, GST) — no live broker, this is paper trading |
 | User Interface | Streamlit, single consolidated dashboard (`frontend/Home.py`) — index (Nifty 50) and BTC panels side by side (live price, Algo Recommendation, session P&L), open positions, recent trades, and a compact session-control side panel (auto-trading toggle, index options scan, force-close) |
@@ -71,6 +71,55 @@ weight = confidence × expertise_relevance(context) × trust_score(persisted his
 ```
 
 `agreement_adjustment` discounts agents that just agree with the room (redundant signal) and amplifies agents that disagree with the room *and* have a strong track record (the "reliable contrarian" case from the spec). The final `directional_confidence` blends the winning action's *dominance* (share of trust-weighted influence) with the *conviction* of the agents backing it (their own confidence × trust) — see `backend/tests/test_consensus.py` for the proofs that this diverges from both majority voting and plain confidence averaging.
+
+## Persistence: SQLite (default) vs Firestore
+
+By default this app stores everything (portfolios, positions, decisions, trades, agent
+reliability scores) in a local SQLite file via SQLAlchemy - zero setup, works out of the box.
+
+**This is a real problem on Cloud Run (or any host with an ephemeral local disk) if you
+don't set `min-instances` ≥ 1**: the container's local filesystem is wiped every time it
+scales to zero and a fresh one spins up, or on every redeploy - so the SQLite file, and every
+decision/trade it holds, resets to empty. If your session's `session_start` keeps showing a
+recent timestamp instead of holding steady across days, this is why.
+
+Two ways to actually fix it:
+
+- **Pin `min-instances` = `max-instances` = 1** on the Cloud Run service (Console → your
+  backend service → Edit & Deploy New Revision → Autoscaling). Keeps one container alive
+  permanently so the local disk survives idle periods - cheap and needs no code change, but
+  a redeploy still resets it (new revision = new container = new empty disk), and it costs
+  continuous compute instead of scale-to-zero.
+- **Switch to Firestore** (`app/db/firestore_session.py`, `app/db/models_firestore.py`): set
+  `FIRESTORE_PROJECT_ID` in `.env` (or as a Cloud Run env var) to your GCP project id. Real
+  persistence that survives both idle scaling and redeploys, and Firestore's free tier (50K
+  reads / 20K writes / 1GB storage per day) comfortably covers this app's volume - a decision
+  every few minutes is nowhere near that ceiling. Requires: the Firestore API enabled and a
+  Firestore database (Native mode) created in that GCP project, and the running service's
+  account having the Cloud Datastore User role (the default Compute Engine service account
+  Cloud Run uses already has this in most projects). No code changes needed beyond the env
+  var - `app/db/models.py` and `app/db/session.py` both branch on whether `FIRESTORE_PROJECT_ID`
+  is set and route every existing call site (`main.py`, `execution_engine.py`,
+  `session_runner.py`, etc.) to the right backend transparently.
+
+**Design note on the Firestore adapter**: `app/db/firestore_session.py` is deliberately a
+narrow shim, not a general ORM - it implements exactly the query patterns this codebase's
+~12 database call sites actually use (`filter_by`, `.filter(col.in_(...))`, `order_by(.desc()/
+.asc())`, `limit`, `first`/`all`/`one_or_none`, `add`/`flush`/`commit`/`refresh`/`get`), found
+by grepping every `db.query()`/`db.add()` call before writing it. Auto-increment integer ids
+are preserved (via a per-collection counter document) rather than switching to Firestore's
+native string document ids, so API paths like `GET /decisions/{decision_id}` didn't need to
+change. **Verified offline against an in-memory fake of `google.cloud.firestore`** (this
+sandbox has no network access to a real Firestore project) covering create/fetch/filter/
+order/limit/relationship-traversal/`.in_()` - one real bug (filtering by `.id` didn't match
+anything, since the id was only used as the document key, not stored in the document body
+too) was caught and fixed this way. What that fake stub *can't* catch: real network/auth
+behavior, Firestore's actual query index requirements (composite queries sometimes need an
+index created via a link Firestore gives you the first time you run them), and real
+concurrent-write behavior. **Test this against your real GCP project before trusting it with
+anything that matters** - watch the Cloud Run logs on first deploy for a
+`FailedPrecondition: query requires an index` error, which just means clicking the link
+Firestore prints to auto-create it.
 
 ## Backtesting (read before considering live trading)
 
@@ -103,18 +152,21 @@ A second, fully independent trading exchange alongside NSE — added specificall
 - **Dashboard**: BTC has its own panel side by side with the Nifty 50 panel in the single consolidated `frontend/Home.py` dashboard (live price, Algo Recommendation, session P&L) — not a separate page.
 - **API**: every relevant endpoint (`/portfolio`, `/watchlist`, `/planner/allocation-plan`, `/session/close`) takes an `exchange` query param (default `NSE`, so every existing caller is unaffected); `/market/chart/{symbol}` and `/analyze/{symbol}` resolve a symbol's exchange automatically.
 
-Not yet done: PI coin (see above), a crypto-specific track record in the reliability tracker (currently shares trust scores with NSE), and options/positional analysis for crypto (the Positional Picks system below is NSE-equity-only).
+Not yet done: PI coin (see above), a crypto-specific track record in the reliability tracker (currently shares trust scores with NSE).
 
-## Positional options picks
+## Positional calls (options + directional)
 
-A second, separate pipeline alongside the intraday session above — screens Nifty 50 and Bank Nifty **index options only** (`POSITIONAL_UNIVERSE=^NSEI,^NSEBANK` in `.env`, not the 3-symbol intraday `WATCHLIST`) for multi-day/week options trades, and ranks candidates instead of producing one verdict at a time. Originally built around a 20-stock large-cap universe; narrowed to index-only since that's the actual use case (no individual-stock trading) and index options are the most liquid F&O instruments on NSE anyway. See `docs/POSITIONAL_OPTIONS_ENHANCEMENT_PLAN.md` for the full design rationale (written before the index-only narrowing).
+A second, separate pipeline alongside the intraday session above — screens Nifty 50, Bank Nifty, Gold, Silver, and BTC (`POSITIONAL_UNIVERSE=^NSEI,^NSEBANK,GOLDBEES.NS,SILVERBEES.NS,BTCINR` in `.env`, not the 3-symbol intraday `WATCHLIST`) for multi-day/week positional trades, and ranks candidates instead of producing one verdict at a time. Originally built around a 20-stock large-cap universe; narrowed to index-only since individual-stock trading wasn't the actual use case, then widened again to add Gold/Silver/BTC once it became clear those were. See `docs/POSITIONAL_OPTIONS_ENHANCEMENT_PLAN.md` for the full design rationale (written before either narrowing/widening pass).
+
+Only Nifty 50 and Bank Nifty get a real **options structure** (long call/put, debit or credit spread with strikes/expiry/max loss/profit) — they're the only two symbols in the universe with a listed NSE options chain this app can fetch. Gold/Silver (ETF proxies, no listed equity options) and BTC (CoinDCX is spot-only, no listed options chain) still run the full committee and get a **directional positional call** (BUY/SELL/HOLD/WAIT + conviction %, no structure) — `app/agents/strategy_architect.py`'s `build_strategy_for_verdict()` already returns `None` gracefully whenever there's no options chain to build real strikes/premiums from, so this needed no new fallback logic, just widening the universe.
 
 - **5 new analyst agents** (`app/agents/analysts/`): IV & Options Chain Analyst (IV rank, put-call OI ratio, max pain), Volatility Regime Analyst (implied vs realized vol, term structure), Catalyst & Events Analyst (earnings/expiry/RBI MPC dates), Liquidity Analyst (bid-ask spread/OI depth as a tradability gate), Relative Strength Analyst (vs the Nifty 50 benchmark) — run in `POSITIONAL_TIER`, only as part of a positional scan, never the intraday tick loop.
-- **Options chain data** (`app/data/options_data.py`): live NSE option-chain fetch (strikes, OI, IV, LTP) — not available via yfinance, so this talks to NSE's own JSON API directly. Degrades to `None` (agents fall back to a clearly-labeled low-confidence read) if NSE is unreachable or rate-limits.
+- **Options chain data** (`app/data/options_data.py`): live NSE option-chain fetch (strikes, OI, IV, LTP) — not available via yfinance, so this talks to NSE's own JSON API directly. Degrades to `None` (agents fall back to a clearly-labeled low-confidence read, and the Strategy Architect skips structuring) for any symbol NSE doesn't have listed options for, or if NSE is unreachable/rate-limits.
+- **Catalyst calendar** (`app/data/calendar_data.py`): the F&O-expiry catalyst event is only emitted for `^NSEI`/`^NSEBANK` — fabricating a monthly "expiry" date for Gold/Silver/BTC (none of which have one) would be a fake event, so it's just omitted for those rather than guessed.
+- **News query** (`app/data/news_data.py`'s `symbol_news_query()`): BTCINR/GOLDBEES.NS/SILVERBEES.NS have no yfinance company profile to pull a search term from, so these three have an explicit override (`SYMBOL_NEWS_QUERY_OVERRIDES` - "Bitcoin", "gold price India", "silver price India") instead of searching the literal ticker string. Shared by both the intraday flow and the positional scanner, since Gold/Silver/BTC are on the intraday watchlists too.
 - **Positional consensus mode**: `compute_consensus(..., mode="positional")` in `app/consensus/trust_weighted_consensus.py` uses a separate `POSITIONAL_EXPERTISE_RELEVANCE` weighting table (fundamentals/macro weighted up, the intraday-only Algo Signal weighted down) and higher, not-yet-backtested decisive thresholds (`POSITIONAL_DECISIVE_THRESHOLD`) — intraday behavior (`mode` omitted) is completely unchanged.
-- **Strategy Architect** (`app/agents/strategy_architect.py`, `app/tools/strategy_builder.py`): once the consensus verdict is final, picks the actual options structure (long call/put, debit spread, or credit spread) from the winning direction + the Volatility Regime Analyst's IV-cheap/rich read, with strikes, expiry, max loss/profit, breakeven, and a payoff curve.
-- **API**: `POST /positional/scan` runs the full committee across the universe (a couple of minutes — ~19 agents × 2 symbols); `GET /positional/picks` returns the latest ranked scan without re-running it; `GET /positional/picks/{symbol}` is the per-symbol drill-down (agent votes, structure, conviction trend across past scans) — not surfaced in the UI, but queryable directly.
-- **Dashboard**: surfaced as a single compact line per index under its panel in `frontend/Home.py` (direction, structure, expiry, max loss/profit) — triggered via the "Scan Index Options" button in the side panel. The full ranked table, payoff diagram, conviction trend, and per-agent vote breakdown were dropped from the UI in favor of an essentials-only single dashboard; they're still available via the API endpoints above.
+- **API**: `POST /positional/scan` runs the full committee across the universe (a few minutes — ~19 agents × 5 symbols); `GET /positional/picks` returns the latest ranked scan without re-running it; `GET /positional/picks/{symbol}` is the per-symbol drill-down (agent votes, structure if any, conviction trend across past scans) — not surfaced in the UI, but queryable directly.
+- **Dashboard**: surfaced as a single compact line per symbol under its panel in `frontend/Home.py` — an options-pick line (direction, structure, expiry, max loss/profit) for Nifty/Bank Nifty, or a directional-call line (direction, conviction %) for Gold/Silver/BTC — triggered via the "Scan Positional Calls" button in the side panel. The full ranked table, payoff diagram, conviction trend, and per-agent vote breakdown were dropped from the UI in favor of an essentials-only single dashboard; they're still available via the API endpoints above.
 
 Not yet done (see the enhancement plan's phased roadmap): a once-daily automatic schedule for the scan (currently on-demand only), backtesting the positional decisive threshold against real scan history, and a separate positional-specific trust score in the reliability tracker (currently shares the intraday one).
 
