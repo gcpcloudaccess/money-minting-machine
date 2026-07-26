@@ -73,13 +73,23 @@ def inject_base_css() -> None:
         .ic-page-header-title { font-size: 1.4rem; font-weight: 800; color: #F8FAFC; letter-spacing: -0.01em; }
         .ic-page-header-subtitle { font-size: 0.88rem; color: #8B96A8; margin-top: 0.15rem; }
 
-        /* Streamlit doesn't stretch sibling columns to equal height by default,
-           so cards with a delta line ended up taller than ones without - making
-           the value line land at a different vertical position per card. Force
-           the row to stretch, and give every card a shared min-height baseline
-           (a row grows past it together if one card's content genuinely needs
-           more room, e.g. a long wrapped delta message). */
-        [data-testid="stHorizontalBlock"] { align-items: stretch; }
+        /* Two different needs that were wrongly solved with one blanket rule:
+           (1) a metric-card ROW (e.g. Total Value / Session P&L) genuinely
+           wants its cards stretched to equal height, since one has a delta
+           line and the other doesn't. (2) the OUTER NSE/BTC panel row does
+           NOT want that - NSE naturally has 3 symbol rows and BTC has 1, so
+           forcing them to equal height just leaves a large dead gap under
+           the shorter panel instead of aligning anything. A single global
+           `align-items: stretch` on every [data-testid="stHorizontalBlock"]
+           (Streamlit gives every st.columns() row that same attribute,
+           nested or not - there's no way to tell them apart by depth alone
+           except structurally) caused exactly that gap. Fix: default to
+           flex-start (natural height) everywhere, then re-enable stretch
+           only for rows nested inside a bordered st.container() - which is
+           precisely the metric-card rows, not the outer panel row that
+           contains those bordered containers rather than living inside one. */
+        [data-testid="stHorizontalBlock"] { align-items: flex-start; }
+        [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] { align-items: stretch; }
         [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { display: flex; flex-direction: column; }
         [data-testid="stColumn"] > div { width: 100%; }
 

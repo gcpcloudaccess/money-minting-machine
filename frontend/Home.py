@@ -102,16 +102,23 @@ def render_exchange_panel(title: str, icon: str, exchange_code: str, symbols: li
                 """,
                 unsafe_allow_html=True,
             )
-            if item and item.get("used_comex_proxy") and item.get("comex_price"):
-                st.caption(f"{label}: NSE closed — live COMEX {item.get('comex_symbol')} feed proxy (analysis only, not tradable).")
-
+            # Both notes are COMEX-derived, so they're merged into one caption
+            # rather than stacked as two near-identical-sounding lines - the
+            # "NSE closed, feed proxy" note only exists at all when NSE is
+            # shut and this symbol's ANALYSIS feed switched to COMEX; the
+            # "Global reference" price (India retail units - real MCX data
+            # isn't freely available, see market_data.py) is shown regardless
+            # of market hours, so it's always the second half of the line
+            # when present.
             ref = item.get("global_reference") if item else None
-            if ref:
-                # Real MCX futures data isn't freely available (official API is
-                # prohibitively expensive) - this is the closest honest free
-                # substitute: COMEX gold/silver converted to India's standard
-                # retail quoting units, always shown regardless of NSE hours.
-                st.caption(f"{ref['label']}: ₹{ref['value_inr']:,.2f} {ref['unit']} (reference only, not GOLDBEES/SILVERBEES-comparable 1:1).")
+            closed_note = (
+                f"NSE closed — live COMEX {item.get('comex_symbol')} feed proxy for analysis (not tradable)"
+                if item and item.get("used_comex_proxy") and item.get("comex_price")
+                else None
+            )
+            ref_note = f"{ref['label']} ₹{ref['value_inr']:,.2f} {ref['unit']} (reference only, not 1:1 comparable)" if ref else None
+            if closed_note or ref_note:
+                st.caption(f"{label}: " + " · ".join(n for n in (closed_note, ref_note) if n) + ".")
 
             pick = picks_by_symbol.get(symbol)
             if pick and pick.get("strategy"):
