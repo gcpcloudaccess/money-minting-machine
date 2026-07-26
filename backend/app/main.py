@@ -290,6 +290,18 @@ def get_watchlist(exchange: str = "NSE", db: Session = Depends(get_db)) -> list[
         except Exception:
             pass
 
+        # Global gold/silver reference (COMEX-derived, INR/10g or INR/kg) -
+        # always fetched regardless of NSE market hours, unlike comex_price
+        # above (which only appears while NSE is closed and actively serving
+        # as the analysis-feed proxy). Real MCX futures data isn't freely
+        # available (official API pricing is prohibitive) - see
+        # market_data.get_global_commodity_reference()'s docstring.
+        global_reference = None
+        try:
+            global_reference = market_data.get_global_commodity_reference(symbol)
+        except Exception:
+            pass
+
         out.append({
             "symbol": symbol, "price": price,
             "latest_verdict": latest.verdict if latest else None,
@@ -299,6 +311,7 @@ def get_watchlist(exchange: str = "NSE", db: Session = Depends(get_db)) -> list[
             "used_comex_proxy": used_comex_proxy,
             "comex_symbol": comex_symbol,
             "comex_price": comex_price,
+            "global_reference": global_reference,
         })
     return out
 

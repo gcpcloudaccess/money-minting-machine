@@ -79,6 +79,42 @@ def minutes_to_close(now: dt.datetime | None = None) -> float:
     return max((close_t - now).total_seconds() / 60.0, 0.0)
 
 
+_TROY_OUNCE_GRAMS = 31.1034768  # exact, physical - not an ETF-specific assumption
+
+
+def get_global_commodity_reference(symbol: str) -> dict | None:
+    """Best-effort global reference price for gold/silver, always live
+    regardless of market hours or data_mode - a real MCX futures feed isn't
+    freely available (the official MCX API costs ~Rs 20L/year, no legitimate
+    free alternative found), so this uses the same COMEX futures (GC=F/SI=F)
+    this app already fetches as an NSE-closed fallback, converted from
+    USD/troy oz to INR using live USDINR. Deliberately reported in India's
+    standard retail gold/silver quoting units (Rs per 10g / Rs per kg) rather
+    than "per GOLDBEES/SILVERBEES unit" - this app has no verified live
+    source for the ETF's exact grams-of-gold-per-unit ratio, and a wrong
+    assumption there would be more misleading than a differently-unit'd but
+    honestly-labeled global comparison. Purely a display reference, never
+    used in any trading/decision logic - same boundary as the existing COMEX
+    fallback (see module docstring)."""
+    proxy_symbol = _COMEX_PROXY.get(symbol)
+    if proxy_symbol is None:
+        return None
+    try:
+        futures_bars = yf.Ticker(proxy_symbol).history(period="5d", interval="1d")
+        usdinr_bars = yf.Ticker("INR=X").history(period="5d", interval="1d")
+        if futures_bars.empty or usdinr_bars.empty:
+            return None
+        troy_oz_price_usd = float(futures_bars["Close"].iloc[-1])
+        usdinr = float(usdinr_bars["Close"].iloc[-1])
+    except Exception:
+        return None
+
+    price_per_gram_inr = (troy_oz_price_usd * usdinr) / _TROY_OUNCE_GRAMS
+    if symbol == "GOLDBEES.NS":
+        return {"label": "Global gold (COMEX)", "value_inr": round(price_per_gram_inr * 10, 2), "unit": "per 10g"}
+    return {"label": "Global silver (COMEX)", "value_inr": round(price_per_gram_inr * 1000, 2), "unit": "per kg"}
+
+
 class MarketDataProvider:
     """Stateful provider: holds a replay cursor per symbol when in replay mode."""
 

@@ -105,6 +105,14 @@ def render_exchange_panel(title: str, icon: str, exchange_code: str, symbols: li
             if item and item.get("used_comex_proxy") and item.get("comex_price"):
                 st.caption(f"{label}: NSE closed — live COMEX {item.get('comex_symbol')} feed proxy (analysis only, not tradable).")
 
+            ref = item.get("global_reference") if item else None
+            if ref:
+                # Real MCX futures data isn't freely available (official API is
+                # prohibitively expensive) - this is the closest honest free
+                # substitute: COMEX gold/silver converted to India's standard
+                # retail quoting units, always shown regardless of NSE hours.
+                st.caption(f"{ref['label']}: ₹{ref['value_inr']:,.2f} {ref['unit']} (reference only, not GOLDBEES/SILVERBEES-comparable 1:1).")
+
             pick = picks_by_symbol.get(symbol)
             if pick and pick.get("strategy"):
                 # Nifty/Bank Nifty: a real options structure (listed NSE index options).

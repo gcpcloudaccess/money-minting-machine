@@ -139,6 +139,17 @@ def inject_base_css() -> None:
         }
         .ic-panel-title:first-child { margin-top: 0; }
 
+        /* Main exchange panel headings (NSE / BTC) - deliberately distinct from
+           .ic-panel-title above (used for smaller side-panel section labels and
+           the Open Positions sub-heading): bigger, heavier weight, and colored
+           with the panel's own accent rather than muted grey, so "NSE" / "BTC"
+           actually reads as a heading rather than blending into the small-caps
+           label styling used everywhere else. */
+        .ic-panel-title-main {
+            font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em;
+            text-transform: none; margin: 0 0 0.85rem 0;
+        }
+
         .ic-divider { height: 1px; background: #1A2333; margin: 1.15rem 0; border: none; }
 
         [data-testid="stMetric"] {
@@ -212,11 +223,13 @@ def page_header(icon: str, title: str, subtitle: str | None = None) -> None:
 def panel_header(icon: str, title: str, accent: str = DEFAULT_ACCENT) -> str:
     """A panel title with a colored accent bar above it - used to give each
     exchange panel (NSE indigo, BTC bitcoin-orange) a distinct visual
-    identity at a glance, beyond just the text label."""
+    identity at a glance, beyond just the text label. Larger/bolder/colored
+    (.ic-panel-title-main) rather than the small muted-grey uppercase style
+    used for side-panel section labels."""
     return (
         f'<div style="height:3px; width:100%; border-radius:3px; margin-bottom:0.85rem; '
         f'background:linear-gradient(90deg, {accent} 0%, {accent}22 100%);"></div>'
-        f'<div class="ic-panel-title" style="margin-top:0;">{icon} {title}</div>'
+        f'<div class="ic-panel-title-main" style="color:{accent};">{icon} {title}</div>'
     )
 
 
