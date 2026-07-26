@@ -16,6 +16,19 @@ DEFAULT_VERDICT_STYLE = {"bg": "#161B27", "fg": "#8B96A8", "border": "#2A3140", 
 TONE_COLORS = {"positive": "#2DD4BF", "negative": "#FB7185", "neutral": "#38BDF8", "muted": "#64748B"}
 ACCENT = "#2DD4BF"
 
+# Per-exchange and per-symbol brand colors - purely visual identity (which
+# panel/row is which at a glance), kept separate from VERDICT_STYLE/TONE_COLORS
+# which carry actual meaning (buy/sell/profit/loss) and shouldn't be muddied
+# by a symbol's "brand" color.
+EXCHANGE_ACCENT = {"NSE": "#6366F1", "CRYPTO_INDIA": "#F7931A"}  # indigo (equities/index) / bitcoin-orange
+SYMBOL_ACCENT = {
+    "^NSEI": "#38BDF8",        # sky blue - the index itself
+    "GOLDBEES.NS": "#F5B324",  # gold
+    "SILVERBEES.NS": "#B8C4D4",  # silver/steel
+    "BTCINR": "#F7931A",       # bitcoin orange
+}
+DEFAULT_ACCENT = "#5B6B84"
+
 
 def inject_base_css() -> None:
     st.markdown(
@@ -54,7 +67,8 @@ def inject_base_css() -> None:
         .ic-page-header-icon {
             font-size: 1.5rem; line-height: 1; width: 46px; height: 46px; flex-shrink: 0;
             display: flex; align-items: center; justify-content: center; border-radius: 12px;
-            background: rgba(45, 212, 191, 0.10); border: 1px solid rgba(45, 212, 191, 0.25);
+            background: linear-gradient(135deg, rgba(45,212,191,0.18) 0%, rgba(99,102,241,0.18) 55%, rgba(247,147,26,0.18) 100%);
+            border: 1px solid rgba(148,163,184,0.25);
         }
         .ic-page-header-title { font-size: 1.4rem; font-weight: 800; color: #F8FAFC; letter-spacing: -0.01em; }
         .ic-page-header-subtitle { font-size: 0.88rem; color: #8B96A8; margin-top: 0.15rem; }
@@ -71,7 +85,7 @@ def inject_base_css() -> None:
 
         .ic-metric-card {
             background: linear-gradient(165deg, #101827 0%, #0B1220 100%);
-            border: 1px solid #1A2333; border-radius: 14px;
+            border: 1px solid #1A2333; border-top: 3px solid var(--accent, #1A2333); border-radius: 14px;
             padding: 0.95rem 1rem; min-height: 100px; height: 100%;
             box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start;
             box-shadow: 0 1px 0 0 rgba(255,255,255,0.03) inset;
@@ -192,6 +206,28 @@ def page_header(icon: str, title: str, subtitle: str | None = None) -> None:
         </div>
         """,
         unsafe_allow_html=True,
+    )
+
+
+def panel_header(icon: str, title: str, accent: str = DEFAULT_ACCENT) -> str:
+    """A panel title with a colored accent bar above it - used to give each
+    exchange panel (NSE indigo, BTC bitcoin-orange) a distinct visual
+    identity at a glance, beyond just the text label."""
+    return (
+        f'<div style="height:3px; width:100%; border-radius:3px; margin-bottom:0.85rem; '
+        f'background:linear-gradient(90deg, {accent} 0%, {accent}22 100%);"></div>'
+        f'<div class="ic-panel-title" style="margin-top:0;">{icon} {title}</div>'
+    )
+
+
+def section_title(title: str, accent: str = DEFAULT_ACCENT) -> str:
+    """A side-panel section title with a small colored dot - quick visual
+    scanning cue distinguishing Auto-Trading / Positional Calls / Market
+    Status sections from one another."""
+    return (
+        f'<div class="ic-panel-title" style="display:flex; align-items:center; gap:0.45rem;">'
+        f'<span style="display:inline-block; width:7px; height:7px; border-radius:50%; background:{accent}; '
+        f'box-shadow:0 0 6px {accent}99;"></span>{title}</div>'
     )
 
 
