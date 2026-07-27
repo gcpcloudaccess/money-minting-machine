@@ -7,6 +7,8 @@ tables, and conviction-trend charts - those live in the API
 (/positional/picks/{symbol}, /decisions/{id}) for anyone who wants to query
 them directly, they're just not surfaced in this UI."""
 
+import datetime as dt
+
 import streamlit as st
 
 from api_client import get, post
@@ -52,6 +54,61 @@ positional = get("/positional/picks", silent=True) or {"picks": []}
 picks_by_symbol = {p["symbol"]: p for p in positional.get("picks", [])}
 
 exchange_status = {e["code"]: e["is_open"] for e in app_settings.get("exchanges", [])}
+
+
+def render_market_status_bar(exchange_status: dict, tick_status: dict) -> None:
+    """Top-of-dashboard strip: NSE/CoinDCX open-closed state plus a tick-
+    scheduler health check. Surfaced prominently (above both exchange panels,
+    not tucked in the side control panel) because "is the Algo actually
+    ticking right now" has been the single most common point of confusion -
+    Cloud Run's background scheduler can silently stall (see README's Cloud
+    Run CPU-allocation notes) and leave prices/decisions frozen with no
+    on-screen indication that anything is wrong. A stale next_run_time (in
+    the past by more than a couple of tick intervals) is a real, diagnosable
+    symptom, not a cosmetic detail, so it gets its own STALLED state here
+    rather than silently showing a wrong "next tick" countdown."""
+    nse_open = exchange_status.get("NSE", False)
+    crypto_open = exchange_status.get("CRYPTO_INDIA", False)
+
+    stalled = False
+    next_run_txt = "—"
+    next_run_raw = tick_status.get("next_run_time")
+    if next_run_raw:
+        try:
+            next_run = dt.datetime.fromisoformat(next_run_raw)
+            now = dt.datetime.now(next_run.tzinfo) if next_run.tzinfo else dt.datetime.utcnow()
+            delta_min = (next_run - now).total_seconds() / 60.0
+            stalled = delta_min < -(2 * tick_status.get("tick_minutes", 5))
+            next_run_txt = next_run.strftime("%d %b, %H:%M UTC")
+        except Exception:
+            next_run_txt = next_run_raw
+
+    with st.container(border=True):
+        st.markdown(panel_header("🌐", "Market Status", "#38BDF8"), unsafe_allow_html=True)
+        m1, m2, m3 = st.columns(3)
+        m1.markdown(
+            metric_card(
+                "NSE (Nifty, Gold, Silver)",
+                "OPEN" if nse_open else "CLOSED",
+                delta="09:15–15:30 IST, Mon–Fri",
+                tone="positive" if nse_open else "muted",
+            ),
+            unsafe_allow_html=True,
+        )
+        m2.markdown(
+            metric_card("CoinDCX (BTC)", "OPEN" if crypto_open else "CLOSED", delta="24/7", tone="positive" if crypto_open else "muted"),
+            unsafe_allow_html=True,
+        )
+        if tick_status.get("paused"):
+            tick_value, tick_tone, tick_delta = "PAUSED", "muted", "resume from the panel on the right"
+        elif stalled:
+            tick_value, tick_tone, tick_delta = "STALLED", "negative", f"expected {next_run_txt} — hasn't ticked since"
+        else:
+            tick_value, tick_tone, tick_delta = f"every {tick_status.get('tick_minutes', '—')} min", "positive", f"next: {next_run_txt}"
+        m3.markdown(metric_card("Algo Tick Scheduler", tick_value, delta=tick_delta, tone=tick_tone), unsafe_allow_html=True)
+
+
+render_market_status_bar(exchange_status, tick_status)
 
 
 def _fmt_inr_or_uncapped(v) -> str:
