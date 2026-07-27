@@ -1,6 +1,6 @@
 # Autonomous Multi-Agent Investment Committee
 
-Autonomous multi-agent committee that paper-trades NSE intraday: an India-only universe (Nifty 50 spot index `^NSEI` — yfinance has no NSE Nifty futures data, so this is a synthetic paper-only position, not a real placeable order — plus MCX gold/silver via their NSE-listed ETF proxies `GOLDBEES.NS`/`SILVERBEES.NS`, with a COMEX gold/silver futures fallback for the analysis feed only while NSE is closed, see `app/data/market_data.py`), **plus BTC via CoinDCX (an Indian crypto exchange, not a global one) trading 24/7 — weekends and NSE's off-hours included** (see [Crypto (BTC)](#crypto-btc) below). Starts with ₹1,00,000 virtual capital per exchange, cash-only (no margin), and autonomously decides BUY / SELL / HOLD / WAIT / SWITCH per symbol using a **trust-weighted, directional-confidence-aware consensus** across 9 analyst agents and a 4-critic debate loop — never simple majority voting or plain confidence averaging.
+Autonomous multi-agent committee that paper-trades NSE **positionally** (positions held across days/weeks, not force-closed same-day - see [Positional trading mode](#positional-trading-mode) below): an India-only universe (Nifty 50 spot index `^NSEI` — yfinance has no NSE Nifty futures data, so this is a synthetic paper-only position, not a real placeable order — plus MCX gold/silver via their NSE-listed ETF proxies `GOLDBEES.NS`/`SILVERBEES.NS`, with a COMEX gold/silver futures fallback for the analysis feed only while NSE is closed, see `app/data/market_data.py`), **plus BTC via CoinDCX (an Indian crypto exchange, not a global one) trading 24/7 — weekends and NSE's off-hours included** (see [Crypto (BTC)](#crypto-btc) below). Starts with ₹1,00,000 virtual capital per exchange, cash-only (no margin), and autonomously decides BUY / SELL / HOLD / WAIT / SWITCH per symbol using a **trust-weighted, directional-confidence-aware consensus** across 9 analyst agents and a 4-critic debate loop — never simple majority voting or plain confidence averaging.
 
 This build targets a **hackathon-friendly, zero-Docker setup**: everything runs with just a Python virtualenv (Python 3.14 verified) and two local processes (FastAPI backend + Streamlit frontend). See [Architecture mapping](#architecture-mapping-diagram--this-build) for how each diagrammed component was implemented.
 
@@ -34,9 +34,36 @@ cp backend/.env.example backend/.env
 
 ### Running a session
 
-- The backend auto-ticks every `TICK_MINUTES` (default 10) via APScheduler once started.
+- The backend auto-ticks every `TICK_MINUTES` (default 5) via APScheduler once started.
 - For a live demo, use the Dashboard's **"Run Tick"** button to trigger a tick on demand instead of waiting.
-- The session auto-closes (force-closing all positions + generating the PDF trade log) when replay data is exhausted, or near NSE close in live mode. You can also force it early from the Dashboard ("Force Close Session") or `POST /session/close`.
+- Positions are never auto-closed on a clock or when replay data runs out (see [Positional trading mode](#positional-trading-mode)) - a portfolio only closes via the manual `POST /session/close` override (force-closes all positions + generates the PDF trade log), which the dashboard no longer exposes as a button by default since it's not part of the normal positional flow.
+
+## Positional trading mode
+
+Every exchange (NSE and CRYPTO_INDIA) runs positionally: a committee tick still only runs during
+that exchange's own trading hours (NSE: 09:15-15:30 IST Mon-Fri; crypto: always), but an opened
+position is no longer force-closed at end of day - it's held across ticks, days, and weeks until
+a real exit condition fires. This replaced the earlier intraday design where NSE's portfolio
+force-closed everything at 15:30 IST and started fresh the next session.
+
+Two independent exit mechanisms, both automatic:
+
+- **Reversal exit** (`app/portfolio/portfolio_manager.py`): every open position's symbol is
+  re-run through the full committee on every tick regardless of the per-tick symbol budget (see
+  `app/agents/planner.py`) - if the consensus verdict flips to SELL/SWITCH, the position closes.
+- **Stop-loss / target exit** (`app/trading/execution_engine.py::check_stop_loss_target`): a
+  pure price check, no LLM call, run every tick before the committee loop. Stop-loss/target
+  levels are set once at entry (`app/portfolio/portfolio_manager.py::_stop_loss_target`) based on
+  the Risk Assessment Analyst's `risk_level` for that trade, at a consistent 1:2 risk-reward
+  ratio (LOW 4%/8%, MEDIUM 6%/12%, HIGH 9%/18%, EXTREME 12%/24%) - wider than a typical intraday
+  stop, since a positional trade is expected to ride out ordinary day-to-day noise over its
+  holding period rather than get shaken out by a single bad hour.
+
+Because positions are now held for days rather than hours, `app/trading/costs.py`'s NSE cost
+profile switched from intraday to **delivery** rates to stay realistic: zero brokerage, STT on
+both buy and sell (0.1% each, vs intraday's 0.025% sell-only), 5x the stamp duty (0.015% vs
+0.003%, still buy-side only), and a new flat DP (Depository Participant) charge on the sell side
+that intraday trades never incur.
 
 ### Tests
 
@@ -59,8 +86,8 @@ Covers the mandatory consensus algorithm (proves it is *not* majority voting / p
 | Reporting & Output | `app/reporting/` — report_agent (LLM "why" narrative), visualization (Plotly equity curve), alert_agent, audit_log, pdf_export (end-of-session explainable trade log PDF) |
 | Memory & Knowledge (PostgreSQL/PGVector/Redis) | SQLite via SQLAlchemy by default (`DATABASE_URL` swappable for Postgres), or Firestore as an alternate backend (`FIRESTORE_PROJECT_ID` - see Persistence section below); decision/vote history queried directly (no vector store dependency); no separate cache layer (single process) |
 | Monitoring & Governance (Prometheus/Grafana/LangSmith/Auth0) | Structured logging + `AuditLog` DB table only — not built; noted here as the production upgrade path |
-| External Integrations (Broker APIs) | Simulated execution engine (`app/trading/execution_engine.py`) with a realistic Indian intraday cost model (`app/trading/costs.py`: brokerage, STT, exchange charges, SEBI charges, stamp duty, GST) — no live broker, this is paper trading |
-| User Interface | Streamlit, single consolidated dashboard (`frontend/Home.py`) — index (Nifty 50) and BTC panels side by side (live price, Algo Recommendation, session P&L), open positions, recent trades, and a compact session-control side panel (auto-trading toggle, index options scan, force-close) |
+| External Integrations (Broker APIs) | Simulated execution engine (`app/trading/execution_engine.py`) with a realistic Indian delivery cost model (`app/trading/costs.py`: brokerage, STT, exchange charges, SEBI charges, stamp duty, DP charge, GST — see [Positional trading mode](#positional-trading-mode)) — no live broker, this is paper trading |
+| User Interface | Streamlit, single consolidated dashboard (`frontend/Home.py`) — a top Market Status strip (NSE/CoinDCX open-closed + tick-scheduler health), NSE (Nifty/Gold/Silver) and BTC panels side by side (live price, Algo Recommendation, portfolio value/P&L, open positions), a candlestick Price Chart panel with a symbol selector, and a compact side panel (auto-trading toggle, positional calls scan) |
 
 ### The mandatory consensus algorithm
 

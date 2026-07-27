@@ -22,13 +22,18 @@ def db():
 
 
 def test_costs_buy_vs_sell_asymmetry():
+    """Delivery cost model (positional mode - see costs.py module docstring):
+    STT now applies on BOTH sides (unlike the old intraday sell-only model),
+    stamp duty stays buy-only, and a DP charge is new and sell-only."""
     buy = compute_costs("BUY", 10, 1000.0)
     sell = compute_costs("SELL", 10, 1000.0)
-    assert buy["stt"] == 0.0
+    assert buy["stt"] > 0.0
     assert sell["stt"] > 0.0
     assert buy["stamp_duty"] > 0.0
     assert sell["stamp_duty"] == 0.0
-    assert sell["total"] > buy["total"]  # STT only on sell side
+    assert buy["dp_charge"] == 0.0
+    assert sell["dp_charge"] > 0.0
+    assert sell["total"] > buy["total"]  # DP charge (sell-only) tips it over even though STT is now symmetric
 
 
 def test_open_and_close_position_updates_cash(db):
@@ -141,3 +146,85 @@ def test_force_close_all(db):
     trades = execution_engine.force_close_all(db, portfolio, {"GOLDBEES.NS": 3100.0, "SILVERBEES.NS": 1480.0})
     assert len(trades) == 2
     assert execution_engine.get_open_exposure(db, portfolio) == 0.0
+
+
+# ---------------------------------------------------------------- positional mode: stop-loss/target
+
+
+def test_open_position_stores_stop_loss_and_target(db):
+    portfolio = Portfolio(cash_inr=10000.0, starting_capital=10000.0, leverage=2.0, status="active")
+    db.add(portfolio)
+    db.commit()
+    db.refresh(portfolio)
+
+    trade = execution_engine.open_position(
+        db, portfolio, "RELIANCE.NS", "LONG", 5, 1000.0, decision_id=None, stop_loss=940.0, target_price=1120.0,
+    )
+    position = execution_engine.get_open_position(db, portfolio, "RELIANCE.NS")
+    assert trade.id is not None
+    assert position.stop_loss == 940.0
+    assert position.target_price == 1120.0
+
+
+def test_process_decision_buy_computes_stop_loss_and_target(db):
+    """Positional mode: every BUY entry gets a stop-loss/target pair based on
+    risk_level (see portfolio_manager._stop_loss_target) instead of relying
+    solely on the committee reversing its verdict to exit."""
+    portfolio = Portfolio(cash_inr=10000.0, starting_capital=10000.0, leverage=2.0, status="active")
+    db.add(portfolio)
+    db.commit()
+    db.refresh(portfolio)
+
+    result = portfolio_manager.process_decision(
+        db, portfolio, "RELIANCE.NS", verdict="BUY", directional_confidence_pct=25.0,
+        risk_level="MEDIUM", volatility=0.01, price=1000.0, decision_id=None,
+    )
+    assert result["executed"] is True
+    assert result["stop_loss"] < 1000.0 < result["target_price"]
+    position = execution_engine.get_open_position(db, portfolio, "RELIANCE.NS")
+    assert position.stop_loss == result["stop_loss"]
+    assert position.target_price == result["target_price"]
+
+
+def test_check_stop_loss_target_closes_on_stop_breach(db):
+    portfolio = Portfolio(cash_inr=10000.0, starting_capital=10000.0, leverage=2.0, status="active")
+    db.add(portfolio)
+    db.commit()
+    db.refresh(portfolio)
+    execution_engine.open_position(
+        db, portfolio, "RELIANCE.NS", "LONG", 5, 1000.0, decision_id=None, stop_loss=940.0, target_price=1120.0,
+    )
+
+    closed = execution_engine.check_stop_loss_target(db, portfolio, {"RELIANCE.NS": 930.0})
+    assert len(closed) == 1
+    assert closed[0]["reason"] == "stop_loss"
+    assert execution_engine.get_open_position(db, portfolio, "RELIANCE.NS") is None
+
+
+def test_check_stop_loss_target_closes_on_target_breach(db):
+    portfolio = Portfolio(cash_inr=10000.0, starting_capital=10000.0, leverage=2.0, status="active")
+    db.add(portfolio)
+    db.commit()
+    db.refresh(portfolio)
+    execution_engine.open_position(
+        db, portfolio, "RELIANCE.NS", "LONG", 5, 1000.0, decision_id=None, stop_loss=940.0, target_price=1120.0,
+    )
+
+    closed = execution_engine.check_stop_loss_target(db, portfolio, {"RELIANCE.NS": 1130.0})
+    assert len(closed) == 1
+    assert closed[0]["reason"] == "target"
+    assert execution_engine.get_open_position(db, portfolio, "RELIANCE.NS") is None
+
+
+def test_check_stop_loss_target_holds_position_between_levels(db):
+    portfolio = Portfolio(cash_inr=10000.0, starting_capital=10000.0, leverage=2.0, status="active")
+    db.add(portfolio)
+    db.commit()
+    db.refresh(portfolio)
+    execution_engine.open_position(
+        db, portfolio, "RELIANCE.NS", "LONG", 5, 1000.0, decision_id=None, stop_loss=940.0, target_price=1120.0,
+    )
+
+    closed = execution_engine.check_stop_loss_target(db, portfolio, {"RELIANCE.NS": 1015.0})
+    assert closed == []
+    assert execution_engine.get_open_position(db, portfolio, "RELIANCE.NS") is not None

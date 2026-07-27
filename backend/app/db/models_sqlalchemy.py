@@ -52,6 +52,13 @@ class Position(Base):
     exchange: Mapped[str] = mapped_column(String(16), default="NSE")
     currency: Mapped[str] = mapped_column(String(8), default="INR")  # local currency the position was priced in
     fx_rate_to_inr: Mapped[float] = mapped_column(Float, default=1.0)  # rate at open time, for explainability
+    # Set once at entry (see portfolio_manager.process_decision) and checked every tick
+    # (see execution_engine.check_stop_loss_target) - positional mode holds positions across
+    # days/weeks instead of force-closing daily, so these are the automatic downside/upside
+    # guardrails that replace "the session ends at 15:30" as the exit trigger. Long-only, so
+    # stop_loss < avg_price < target_price always.
+    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     portfolio: Mapped["Portfolio"] = relationship(back_populates="positions")
 

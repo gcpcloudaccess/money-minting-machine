@@ -208,6 +208,8 @@ class Position(FirestoreModel):
     exchange = Column(default="NSE")
     currency = Column(default="INR")
     fx_rate_to_inr = Column(default=1.0)
+    stop_loss = Column(default=None)
+    target_price = Column(default=None)
 
 
 class Trade(FirestoreModel):

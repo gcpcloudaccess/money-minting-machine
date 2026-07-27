@@ -63,6 +63,15 @@ def test_crypto_session_never_ends():
     assert runner._session_should_end(exchanges.CRYPTO_INDIA, list(exchanges.CRYPTO_INDIA.watchlist)) is False
 
 
+def test_nse_session_never_ends_either_positional_mode():
+    """Positional mode (see session_runner.py's module docstring): NSE no
+    longer force-closes near 15:30 IST the way it did under the old intraday
+    design - every exchange now behaves like CRYPTO_INDIA always did."""
+    runner = _runner("live")
+    from app.data import exchanges
+    assert runner._session_should_end(exchanges.NSE, list(exchanges.NSE.watchlist)) is False
+
+
 def test_planners_are_independent_per_exchange():
     runner = _runner("replay")
     from app.data import exchanges

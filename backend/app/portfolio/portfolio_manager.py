@@ -14,6 +14,25 @@ from app.db.session import DbSession as Session
 from app.portfolio import execution_advisor, position_sizing, scenario_analysis
 from app.trading import execution_engine
 
+# Stop-loss / target bands for positional (multi-day/week) holds, keyed by the
+# same risk_level the Risk Assessment Analyst already produces every tick.
+# Wider than a typical intraday stop (a position is now expected to ride out
+# ordinary day-to-day noise over its holding period, not get shaken out by a
+# single bad hour) and a consistent 1:2 risk-reward ratio across bands rather
+# than a volatility model - simple, deterministic, and inspectable, same
+# design bias as the rest of this system (see app/memory/retrieval.py).
+_STOP_TARGET_PCT = {
+    "LOW": (0.04, 0.08),
+    "MEDIUM": (0.06, 0.12),
+    "HIGH": (0.09, 0.18),
+    "EXTREME": (0.12, 0.24),
+}
+
+
+def _stop_loss_target(price: float, risk_level: str) -> tuple[float, float]:
+    stop_pct, target_pct = _STOP_TARGET_PCT.get(risk_level, _STOP_TARGET_PCT["MEDIUM"])
+    return round(price * (1 - stop_pct), 4), round(price * (1 + target_pct), 4)
+
 
 def process_decision(
     db: Session,
@@ -89,12 +108,17 @@ def process_decision(
             return {"executed": False, "reason": sizing.get("reason", "Position sizing returned 0 shares."), "sizing": sizing, "advice": advice}
 
         scenario = scenario_analysis.stress_test(price, sizing["quantity"], "LONG", volatility)
+        stop_loss, target_price = _stop_loss_target(price, risk_level)
         trade = execution_engine.open_position(
             db, portfolio, symbol, "LONG", sizing["quantity"], price, decision_id,
             exchange=exchange, currency=exchanges.get_exchange(exchange).currency, price_local=price_local, fx_rate_to_inr=fx_rate_to_inr,
+            stop_loss=stop_loss, target_price=target_price,
         )
         action = "OPEN_LONG" if verdict == "BUY" else "OPEN_LONG_FROM_SWITCH"
-        return {"executed": True, "action": action, "trade_id": trade.id, "sizing": sizing, "scenario": scenario, "advice": advice}
+        return {
+            "executed": True, "action": action, "trade_id": trade.id, "sizing": sizing, "scenario": scenario,
+            "advice": advice, "stop_loss": stop_loss, "target_price": target_price,
+        }
 
     if verdict in ("SELL", "SWITCH"):
         if existing is None:

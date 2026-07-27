@@ -2,21 +2,25 @@
 
 Ticks every currently-eligible exchange independently, each with its own
 persistent active Portfolio (see app/trading/execution_engine.py's
-get_active_portfolio, which is now exchange-scoped) and its own lifecycle:
+get_active_portfolio, which is now exchange-scoped):
 
 - NSE: eligible only during its own session hours in live mode (or always in
-  replay mode, governed by its own cached replay data running out) - unchanged
-  from before this module supported more than one exchange.
+  replay mode) - unchanged from before this module supported more than one
+  exchange. This only gates WHEN a tick can run (no point re-analyzing a
+  symbol whose price isn't moving); it no longer gates when the portfolio
+  closes - see positional mode below.
 - CRYPTO_INDIA: ALWAYS eligible, live or replay, weekday or weekend, NSE open
-  or closed - the whole point of adding it (see app/data/exchanges.py). Its
-  session never force-closes on its own; it just keeps compounding
-  indefinitely, same as a real always-open market. In replay mode its replay
-  cursor wraps around instead of exhausting (see market_data.py's advance()).
+  or closed (see app/data/exchanges.py).
 
-There is no longer a single global "the active session" that rolls over
-between exchanges - each exchange keeps its own portfolio the whole time,
-which is what actually lets crypto trade continuously while NSE separately
-opens, closes, and reports each trading day."""
+Positional mode (all exchanges): a portfolio never auto-closes on a clock or
+on running out of replay data - positions are held across days/weeks until
+an actual exit condition fires (committee reversal via portfolio_manager's
+SELL/SWITCH handling, or a stop-loss/target hit via
+execution_engine.check_stop_loss_target, checked every tick below). This
+replaced the earlier intraday design where NSE force-closed everything at
+15:30 IST and started a fresh portfolio the next session - see
+_close_session, which is now only reachable through the manual
+POST /session/close override, never automatically."""
 
 from __future__ import annotations
 
@@ -89,6 +93,24 @@ class SessionRunner:
 
         watchlist = list(exchange.watchlist)
         open_symbols = [p.symbol for p in db.query(Position).filter_by(portfolio_id=portfolio.id, status="open").all()]
+
+        # Stop-loss/target check runs FIRST, before this tick's committee calls -
+        # it's pure price lookups (no LLM cost), so it's cheap to run every tick
+        # regardless of the planner's per-tick symbol budget, and closing a
+        # breached position before the committee re-evaluates it avoids spending
+        # an LLM call analyzing a symbol that's about to be flat anyway.
+        if open_symbols:
+            price_lookup = {}
+            for s in open_symbols:
+                try:
+                    price_lookup[s] = self.provider.get_latest_price(s)
+                except Exception:
+                    continue
+            closed = execution_engine.check_stop_loss_target(db, portfolio, price_lookup)
+            for c in closed:
+                audit_log.log_event(db, "stop_loss_target_exit", {"exchange": exchange.code, **c})
+                logger.info("Auto-closed %s (%s) on %s @ %.2f", c["symbol"], c["reason"], exchange.code, c["price"])
+
         symbols = self._planner_for(exchange).plan_tick(watchlist, open_symbols)
 
         for sym in symbols:
@@ -100,15 +122,15 @@ class SessionRunner:
 
         self.provider.advance_all(watchlist)
 
-        if self._session_should_end(exchange, watchlist):
-            self._close_session(db, portfolio, watchlist)
-
     def _session_should_end(self, exchange: Exchange, watchlist: list[str]) -> bool:
-        if exchange.code == "CRYPTO_INDIA":
-            return False  # 24/7 - never auto-closes, see class docstring
-        if self.settings.data_mode == "live":
-            return exchange.minutes_to_close() <= self.settings.tick_minutes
-        return all(self.provider.is_session_exhausted(s) for s in watchlist)
+        """Positional mode: no exchange auto-closes its portfolio anymore -
+        every exchange now behaves the way CRYPTO_INDIA always did (see class
+        docstring) - so this unconditionally returns False and _tick_exchange
+        no longer calls it. Kept (rather than deleted) purely so existing
+        callers/tests that assert "an exchange's session doesn't auto-end"
+        keep a stable method to call; _close_session is still reachable, just
+        only via the manual POST /session/close -> close_now path now."""
+        return False
 
     def close_now(self, exchange: str = "NSE") -> None:
         """Force-close the given exchange's active session immediately

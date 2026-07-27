@@ -58,6 +58,7 @@ def _position_dict(p: Position) -> dict:
         "closed_at": p.closed_at.isoformat() if p.closed_at else None,
         "exit_price": p.exit_price, "realized_pnl": p.realized_pnl,
         "exchange": p.exchange, "currency": p.currency,
+        "stop_loss": p.stop_loss, "target_price": p.target_price,
     }
 
 

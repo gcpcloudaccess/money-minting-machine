@@ -209,6 +209,12 @@ def render_exchange_panel(title: str, icon: str, exchange_code: str, symbols: li
                     """,
                     unsafe_allow_html=True,
                 )
+                # Positional mode (see backend/app/orchestration/session_runner.py): this
+                # position holds until one of these auto-exit levels is hit, or the committee
+                # reverses - surfacing both here is the only place a user can see WHY a
+                # position might close on its own between visits to the dashboard.
+                if p.get("stop_loss") is not None and p.get("target_price") is not None:
+                    st.caption(f"Auto-exit: stop ₹{p['stop_loss']:,.2f} · target ₹{p['target_price']:,.2f}")
         else:
             st.caption("No open positions.")
 

@@ -52,10 +52,14 @@ def get_open_position(db: Session, portfolio: Portfolio, symbol: str) -> Positio
 def open_position(
     db: Session, portfolio: Portfolio, symbol: str, side: str, quantity: float, price: float, decision_id: int | None,
     exchange: str = "NSE", currency: str = "INR", price_local: float | None = None, fx_rate_to_inr: float = 1.0,
+    stop_loss: float | None = None, target_price: float | None = None,
 ) -> Trade:
     """`price` is always in INR (NSE-only, INR-only build - no FX conversion
     needed). `price_local`/`currency`/`fx_rate_to_inr` are kept as fields
-    purely for schema stability, always price/"INR"/1.0 in this build."""
+    purely for schema stability, always price/"INR"/1.0 in this build.
+    stop_loss/target_price are optional (Stock Search's preview path and
+    tests don't always set them) - see portfolio_manager.process_decision
+    for how they're actually computed for a real entry."""
     action = "BUY" if side == "LONG" else "SELL"
     costs = compute_costs(action, quantity, price, exchange=exchange, fx_rate_to_inr=fx_rate_to_inr)
     gross = quantity * price
@@ -64,6 +68,7 @@ def open_position(
     position = Position(
         portfolio_id=portfolio.id, symbol=symbol, side=side, quantity=quantity, avg_price=price,
         exchange=exchange, currency=currency, fx_rate_to_inr=fx_rate_to_inr,
+        stop_loss=stop_loss, target_price=target_price,
     )
     db.add(position)
     db.flush()
@@ -149,3 +154,35 @@ def force_close_all(db: Session, portfolio: Portfolio, price_lookup: dict[str, f
             continue
         trades.append(close_position(db, portfolio, pos, price, decision_id=None))
     return trades
+
+
+def check_stop_loss_target(db: Session, portfolio: Portfolio, price_lookup: dict[str, float]) -> list[dict]:
+    """Positional-mode exit guardrail: runs every tick (see session_runner.py),
+    purely on current price - no LLM/committee call, so it's cheap enough to
+    check unconditionally regardless of whether this tick's committee budget
+    happened to include a given symbol (see agents/planner.py). Complements
+    rather than replaces the existing reversal-based exit (portfolio_manager's
+    SELL/SWITCH handling): a position can still be closed by the committee
+    changing its mind, this only additionally catches a stop-loss/target hit
+    between committee re-evaluations. Long-only (see portfolio_manager.py),
+    so a breach is simply price <= stop_loss or price >= target_price."""
+    closed: list[dict] = []
+    open_positions = db.query(Position).filter_by(portfolio_id=portfolio.id, status="open").all()
+    for pos in open_positions:
+        price = price_lookup.get(pos.symbol)
+        if price is None:
+            continue
+        reason = None
+        if pos.stop_loss is not None and price <= pos.stop_loss:
+            reason = "stop_loss"
+        elif pos.target_price is not None and price >= pos.target_price:
+            reason = "target"
+        if reason is None:
+            continue
+        trade = close_position(db, portfolio, pos, price, decision_id=None)
+        closed.append({
+            "symbol": pos.symbol, "reason": reason, "price": price,
+            "stop_loss": pos.stop_loss, "target_price": pos.target_price,
+            "realized_pnl": pos.realized_pnl, "trade_id": trade.id,
+        })
+    return closed
