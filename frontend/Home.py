@@ -332,18 +332,3 @@ with side_col, st.container(border=True):
             st.caption(f"{icon} {ts} · {e['event_type'].replace('_', ' ')} {sym} {verdict}".strip())
     else:
         st.caption("No activity logged yet.")
-
-# ================================================================== BOTTOM: portfolio growth curve (both exchanges)
-with st.container(border=True):
-    st.markdown(panel_header("📈", "Portfolio Growth", "#2DD4BF"), unsafe_allow_html=True)
-    g1, g2 = st.columns(2, gap="medium")
-    for gcol, exch, exch_label, exch_color in ((g1, "NSE", "NSE", "#6366F1"), (g2, "CRYPTO_INDIA", "BTC (CoinDCX)", "#F7931A")):
-        with gcol:
-            st.markdown(f"<div style='font-size:0.8rem; font-weight:700; color:{exch_color}; margin-bottom:0.3rem;'>{exch_label}</div>", unsafe_allow_html=True)
-            curve = get("/portfolio/equity-curve", exchange=exch, silent=True)
-            if curve and curve.get("figure"):
-                fig = go.Figure(curve["figure"])
-                fig.update_layout(height=200, margin={"t": 10, "b": 20, "l": 40, "r": 10}, font={"size": 10}, showlegend=False)
-                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=f"equity_{exch}")
-            else:
-                st.caption("No trade history yet for this exchange's active session.")
