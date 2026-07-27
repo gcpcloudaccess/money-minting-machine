@@ -147,14 +147,14 @@ def render_exchange_panel(title: str, icon: str, exchange_code: str, symbols: li
             badge_html = verdict_badge(verdict)
             st.markdown(
                 f"""
-                <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:nowrap; padding:0.65rem 1rem 0.65rem 0.9rem; margin-top:0.6rem; margin-bottom:0; border-left:4px solid {symbol_accent};">
+                <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:nowrap; padding:0.5rem 0.85rem; margin-top:0.4rem; margin-bottom:0; border-left:4px solid {symbol_accent};">
                     <div style="white-space:nowrap;">
-                        <span style="font-weight:700; color:#F8FAFC;">{label}</span>
-                        <span style="margin-left:0.6rem;">{badge_html}</span>
+                        <span style="font-weight:700; color:#F8FAFC; font-size:0.85rem;">{label}</span>
+                        <span style="margin-left:0.5rem;">{badge_html}</span>
                     </div>
                     <div style="text-align:right; font-family:'JetBrains Mono','SF Mono',monospace; white-space:nowrap;">
-                        <div style="color:#F8FAFC; font-weight:600;">{price_txt}</div>
-                        <div style="color:#5B6B84; font-size:0.72rem;">{conf_txt}</div>
+                        <div style="color:#F8FAFC; font-weight:600; font-size:0.85rem;">{price_txt}</div>
+                        <div style="color:#5B6B84; font-size:0.68rem;">{conf_txt}</div>
                     </div>
                 </div>
                 """,
@@ -186,12 +186,12 @@ def render_exchange_panel(title: str, icon: str, exchange_code: str, symbols: li
                 pos_accent = SYMBOL_ACCENT.get(p["symbol"], exchange_accent)
                 st.markdown(
                     f"""
-                    <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center; margin-top:0.4rem; margin-bottom:0; border-left:4px solid {pos_accent};">
+                    <div class="ic-card" style="display:flex; justify-content:space-between; align-items:center; margin-top:0.3rem; margin-bottom:0; border-left:4px solid {pos_accent};">
                         <div>
-                            <span style="font-weight:700; color:#F8FAFC;">{p['symbol']}</span>
+                            <span style="font-weight:700; color:#F8FAFC; font-size:0.85rem;">{p['symbol']}</span>
                             <span class="ic-badge" style="margin-left:0.5rem; background:#0B2A24;color:#2DD4BF;border:1px solid #14B8A6;">{p['side']}</span>
                         </div>
-                        <div style="font-family:'JetBrains Mono','SF Mono',monospace; color:#8B96A8; font-size:0.85rem;">
+                        <div style="font-family:'JetBrains Mono','SF Mono',monospace; color:#8B96A8; font-size:0.78rem;">
                             Qty {p['quantity']:g} @ ₹{p['avg_price']:,.2f}
                         </div>
                     </div>
@@ -223,7 +223,7 @@ CHART_OPTIONS = [
 ]
 
 
-def render_price_chart_panel(height: int = 230) -> None:
+def render_price_chart_panel(height: int = 190) -> None:
     """Candlestick chart with a symbol picker (backed by the existing
     /market/chart/{symbol} endpoint). Placed directly under the BTC panel
     (see call site below) rather than as its own full-width section - BTC's
@@ -237,7 +237,7 @@ def render_price_chart_panel(height: int = 230) -> None:
         chart_data = get(f"/market/chart/{chart_symbol}", silent=True)
         if chart_data and chart_data.get("figure"):
             fig = go.Figure(chart_data["figure"])
-            fig.update_layout(height=height, margin={"t": 40, "b": 30, "l": 45, "r": 15})
+            fig.update_layout(height=height, margin={"t": 24, "b": 20, "l": 40, "r": 10}, font={"size": 10})
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
             if chart_data.get("used_comex_proxy"):
                 st.caption(f"NSE closed — showing live COMEX {chart_data.get('source_symbol')} feed as an analysis proxy (not tradable).")

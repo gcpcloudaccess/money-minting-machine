@@ -36,6 +36,13 @@ def inject_base_css() -> None:
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
 
+        /* Shrinks the root font size (browser default 16px) so every rem-based
+           size in this file - and every unstyled Streamlit built-in (buttons,
+           selectbox, captions, widget labels) - scales down together, rather
+           than hunting down and shrinking each element's font-size one by one.
+           This is the single biggest lever for fitting the whole dashboard in
+           the viewport without scrolling. */
+        html { font-size: 13px; }
         html, body, [class*="css"] { font-family: 'Inter', 'Segoe UI', system-ui, sans-serif; }
 
         #MainMenu, footer, header[data-testid="stHeader"] { visibility: visible; }
