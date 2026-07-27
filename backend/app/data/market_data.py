@@ -30,6 +30,7 @@ market-hours concept to work around in the first place.
 
 from __future__ import annotations
 
+import collections
 import datetime as dt
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -115,6 +116,20 @@ def get_global_commodity_reference(symbol: str) -> dict | None:
     return {"label": "Global silver (COMEX)", "value_inr": round(price_per_gram_inr * 1000, 2), "unit": "per kg"}
 
 
+# Caps how many of this app's own live price observations are kept per
+# symbol (see record_live_tick()/_accumulated_bars() below) - at a 3-5 minute
+# tick cadence, 500 points is roughly 25-40 hours of history, ample for the
+# intraday indicators that consume it, without growing memory unboundedly
+# over a long-running container.
+_MAX_ACCUMULATED_TICKS = 500
+# Below this many bars, a source's own history is treated as "not enough to
+# analyze confidently" and gets supplemented with this app's accumulated live
+# ticks (see get_recent_bars()) - matches the kind of bar count that was
+# producing "insufficient bar history" fallbacks from the Technical/Risk/Algo
+# Signal agents in practice.
+_MIN_USABLE_BARS = 20
+
+
 class MarketDataProvider:
     """Stateful provider: holds a replay cursor per symbol when in replay mode."""
 
@@ -123,6 +138,16 @@ class MarketDataProvider:
         self._replay_cache: dict[str, pd.DataFrame] = {}
         self._replay_index: dict[str, int] = {}
         self._daily_cache: dict[str, pd.DataFrame] = {}
+        # symbol -> deque[(timestamp, price)] - this app's own live price
+        # observations, accumulated one point per tick (see record_live_tick).
+        # In-memory only, by design: it resets on every container restart
+        # rather than being persisted, so it's always genuinely real data
+        # this process itself has observed, never stale data surviving past
+        # a redeploy. See module docstring for why a resilience layer like
+        # this exists at all (a source's own historical-candles endpoint -
+        # CoinDCX especially - can be unreliable independent of whether the
+        # simpler live-price/ticker endpoint is reachable).
+        self._live_ticks: dict[str, collections.deque] = {}
 
     # -- internal -----------------------------------------------------
     def _effective_symbol(self, symbol: str, allow_proxy: bool) -> tuple[str, bool]:
@@ -162,6 +187,68 @@ class MarketDataProvider:
         self._replay_index.setdefault(symbol, min(REPLAY_WARMUP_BARS, max(len(df) - 1, 1)))
         return df
 
+    # -- live-tick accumulator ------------------------------------------
+    def record_live_tick(self, symbol: str) -> None:
+        """Appends this symbol's current live price to an in-memory,
+        process-lifetime history (see __init__). Cheap - a plain price
+        lookup, not an LLM call - so session_runner.py calls this for every
+        watchlist symbol on every tick, regardless of which symbols that
+        tick's committee budget actually covers (see agents/planner.py).
+        Best-effort: a failed price lookup just skips this tick's point
+        rather than raising, consistent with every other data-fetch method
+        in this module."""
+        try:
+            price = self.get_latest_price(symbol)
+        except Exception:
+            return
+        bucket = self._live_ticks.setdefault(symbol, collections.deque(maxlen=_MAX_ACCUMULATED_TICKS))
+        bucket.append((dt.datetime.now(dt.timezone.utc), price))
+
+    def _accumulated_bars(self, symbol: str) -> pd.DataFrame:
+        points = self._live_ticks.get(symbol)
+        if not points:
+            return pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+        timestamps, prices = zip(*points)
+        return pd.DataFrame(
+            {"Open": prices, "High": prices, "Low": prices, "Close": prices, "Volume": [0.0] * len(prices)},
+            index=pd.DatetimeIndex(timestamps),
+        )
+
+    def _with_accumulated_fallback(self, symbol: str, result: pd.DataFrame, lookback_bars: int) -> pd.DataFrame:
+        """If the source's own history came back too thin to analyze
+        confidently (see _MIN_USABLE_BARS), merge in this app's own
+        accumulated live-tick observations (see record_live_tick) rather
+        than leaving Technical/Risk/Algo Signal agents to fall back to
+        "insufficient bar history" every tick. Each accumulated point is a
+        single real observed price (Open=High=Low=Close, Volume=0) rather
+        than a true intrabar candle - a reasonable approximation for a
+        discretely-polled series, and still much more useful to trend/
+        momentum indicators than no history at all. Only ever ADDS bars;
+        never replaces a source that's already returning enough on its own,
+        and never overwrites result.attrs (source_symbol/used_comex_proxy
+        transparency stays accurate to what was actually fetched)."""
+        if len(result) >= _MIN_USABLE_BARS:
+            return result
+        accumulated = self._accumulated_bars(symbol)
+        if accumulated.empty:
+            return result
+        attrs = dict(getattr(result, "attrs", {}))
+        if not result.empty:
+            # Every real source in this module (yfinance/CoinDCX) already
+            # returns a DatetimeIndex, but concatenating against a mismatched
+            # index type (e.g. a plain RangeIndex) makes pandas' sort_index()
+            # raise rather than silently misbehave - coerce defensively so
+            # this fallback can never crash a tick over an index-type
+            # mismatch, whatever produced `result`.
+            if not isinstance(result.index, pd.DatetimeIndex):
+                result = result.set_axis(pd.to_datetime(result.index, utc=True))
+            combined = pd.concat([accumulated, result])
+        else:
+            combined = accumulated
+        combined = combined[~combined.index.duplicated(keep="last")].sort_index().tail(lookback_bars)
+        combined.attrs.update(attrs)
+        return combined
+
     # -- public API -----------------------------------------------------
     def get_recent_bars(self, symbol: str, lookback_bars: int = 200, allow_proxy: bool = True) -> pd.DataFrame:
         if self.mode == "replay":
@@ -178,14 +265,14 @@ class MarketDataProvider:
                 df = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
             df.attrs["source_symbol"] = symbol
             df.attrs["used_comex_proxy"] = False
-            return df
+            return self._with_accumulated_fallback(symbol, df, lookback_bars)
         fetch_symbol, used_proxy = self._effective_symbol(symbol, allow_proxy)
         ticker = yf.Ticker(fetch_symbol)
         df = ticker.history(period="5d", interval="5m")
         result = df.tail(lookback_bars)
         result.attrs["source_symbol"] = fetch_symbol
         result.attrs["used_comex_proxy"] = used_proxy
-        return result
+        return self._with_accumulated_fallback(symbol, result, lookback_bars)
 
     def get_daily_bars(self, symbol: str, period: str = "6mo", allow_proxy: bool = True) -> pd.DataFrame:
         """Daily OHLCV history - independent of live/replay mode and the intraday

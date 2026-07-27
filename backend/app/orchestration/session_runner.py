@@ -92,6 +92,18 @@ class SessionRunner:
             return
 
         watchlist = list(exchange.watchlist)
+
+        # Cheap - a plain price lookup, no LLM cost - so every watchlist
+        # symbol gets a live observation recorded every tick, not just the
+        # ones this tick's committee budget happens to cover (see
+        # agents/planner.py). This is what actually builds up this app's own
+        # accumulated bar history over time (see market_data.py's
+        # record_live_tick/_with_accumulated_fallback) - a resilience layer
+        # for when a source's own historical-candles endpoint doesn't return
+        # enough data on its own (see crypto_data.py's CoinDCX bot-check note).
+        for s in watchlist:
+            self.provider.record_live_tick(s)
+
         open_symbols = [p.symbol for p in db.query(Position).filter_by(portfolio_id=portfolio.id, status="open").all()]
 
         # Stop-loss/target check runs FIRST, before this tick's committee calls -
