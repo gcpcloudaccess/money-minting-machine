@@ -9,6 +9,7 @@ them directly, they're just not surfaced in this UI."""
 
 import datetime as dt
 
+import plotly.graph_objects as go
 import streamlit as st
 
 from api_client import get, post
@@ -271,6 +272,27 @@ with side_col, st.container(border=True):
         st.rerun()
     if positional.get("scanned_at"):
         st.caption(f"Last scan: {positional['scanned_at']}")
+    # Market Status has its own full-width panel at the top of the dashboard
+    # now (render_market_status_bar) - a second copy here would just repeat
+    # the same NSE/CoinDCX open-closed state in smaller text for no reason.
 
-    st.markdown(section_title("Market Status", "#38BDF8"), unsafe_allow_html=True)
-    st.caption(f"NSE: {'open' if exchange_status.get('NSE') else 'closed'} · CoinDCX: {'open' if exchange_status.get('CRYPTO_INDIA') else 'closed'} (always open)")
+# ================================================================== BELOW: candlestick chart for a selected symbol
+CHART_OPTIONS = [
+    ("Nifty 50", "^NSEI"),
+    ("Gold (GOLDBEES)", "GOLDBEES.NS"),
+    ("Silver (SILVERBEES)", "SILVERBEES.NS"),
+    ("BTC (CoinDCX)", "BTCINR"),
+]
+with st.container(border=True):
+    st.markdown(panel_header("📉", "Price Chart", "#2DD4BF"), unsafe_allow_html=True)
+    chart_label = st.selectbox("Script", options=[label for label, _ in CHART_OPTIONS], label_visibility="collapsed")
+    chart_symbol = dict(CHART_OPTIONS)[chart_label]
+    chart_data = get(f"/market/chart/{chart_symbol}", silent=True)
+    if chart_data and chart_data.get("figure"):
+        fig = go.Figure(chart_data["figure"])
+        fig.update_layout(height=380, margin={"t": 40, "b": 30, "l": 45, "r": 15})
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        if chart_data.get("used_comex_proxy"):
+            st.caption(f"NSE closed — showing live COMEX {chart_data.get('source_symbol')} feed as an analysis proxy (not tradable).")
+    else:
+        st.caption("No bar data available for this symbol right now.")
