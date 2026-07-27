@@ -77,8 +77,8 @@ jobs:
             STARTING_CAPITAL_INR=100000
             LEVERAGE=1
             SESSION_HOURS=4
-            TICK_MINUTES=3
-            MAX_SYMBOLS_PER_TICK=1
+            TICK_MINUTES=5
+            MAX_SYMBOLS_PER_TICK=4
             RISK_TOLERANCE=moderate
             MAX_PARALLEL_AGENTS=4
           # WATCHLIST intentionally omitted - a comma-separated value here gets

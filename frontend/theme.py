@@ -146,6 +146,16 @@ def inject_base_css() -> None:
             box-shadow: 0 1px 0 0 rgba(255,255,255,0.03) inset;
         }
 
+        /* Captions (e.g. the COMEX/global-reference note under Gold/Silver, or the
+           positional-pick line under each symbol) sit between one ic-card row and
+           the next with only the parent block's gap (0.55rem, see below) separating
+           them - fine for a one-line caption, but a caption that wraps to two lines
+           (long COMEX + global-reference text on a narrow panel) can visually crowd
+           right up against the next row's card, reading as if it overlaps. Giving
+           captions their own small top/bottom margin restores a clear gap in that
+           two-line case without undoing the overall vertical squeeze. */
+        [data-testid="stCaptionContainer"] { margin: 0.3rem 0 0.45rem 0; line-height: 1.35; }
+
         [data-testid="stVerticalBlockBorderWrapper"] {
             background: linear-gradient(180deg, #0F1626 0%, #0A0F1C 100%) !important;
             border: 1px solid #1A2333 !important; border-radius: 16px !important;

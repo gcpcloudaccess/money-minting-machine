@@ -61,7 +61,12 @@ class Settings(BaseSettings):
     # faster than max_symbols_per_tick x (time per symbol), regardless of how often the
     # scheduler fires. Lower = faster individual decisions, less breadth per tick (the
     # watchlist still rotates fully over time, just in smaller batches).
-    max_symbols_per_tick: int = 1
+    # 5 comfortably covers NSE's entire 3-symbol watchlist (^NSEI/GOLDBEES.NS/SILVERBEES.NS)
+    # every tick instead of rotating one at a time - worst case (3 x 90s = 4.5min) still
+    # fits inside a 5-minute TICK_MINUTES window, and APScheduler's default max_instances=1
+    # (see main.py's add_job call) means a tick that ever did run long would simply get
+    # skipped rather than overlap with the next one, not corrupt anything.
+    max_symbols_per_tick: int = 5
 
     # Optional India macro inputs for the Macroeconomist Analyst's regime model
     # (GDP growth, CPI inflation, RBI repo rate). No free live feed for these is

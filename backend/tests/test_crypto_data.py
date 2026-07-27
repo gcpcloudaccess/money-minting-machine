@@ -33,7 +33,13 @@ def test_get_ticker_returns_none_for_unlisted_market():
 
 
 def test_get_ticker_degrades_gracefully_on_network_failure():
-    with patch("app.data.crypto_data.httpx.get", side_effect=ConnectionError("no network")):
+    # Zero out the retry backoff so this test doesn't actually sleep through
+    # _get_with_retry's real retry/backoff loop (see crypto_data.py) - the
+    # behavior under test is "gives up cleanly and returns None", not the
+    # timing of the retries themselves.
+    with patch("app.data.crypto_data.httpx.get", side_effect=ConnectionError("no network")), \
+         patch("app.data.crypto_data._RETRY_BACKOFF_SECONDS", 0), \
+         patch("app.data.crypto_data.time.sleep"):
         assert crypto_data.get_ticker("BTCINR") is None
 
 
