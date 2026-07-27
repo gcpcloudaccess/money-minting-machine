@@ -179,7 +179,7 @@ def render_exchange_panel(title: str, icon: str, exchange_code: str, symbols: li
                 # so this is a plain directional positional call instead.
                 st.caption(f"{label} positional call: {pick['direction']} · {pick['directional_confidence']:.0f}% conviction")
 
-        st.markdown("<div style='height:0.9rem;'></div>", unsafe_allow_html=True)  # breathing room above the section title so it doesn't crowd the last row above it
+        st.markdown("<div style='height:0.5rem;'></div>", unsafe_allow_html=True)  # breathing room above the section title so it doesn't crowd the last row above it
         st.markdown(section_title("Open Positions", exchange_accent), unsafe_allow_html=True)
         if portfolio["positions"]:
             for p in portfolio["positions"]:
@@ -223,7 +223,7 @@ CHART_OPTIONS = [
 ]
 
 
-def render_price_chart_panel(height: int = 320) -> None:
+def render_price_chart_panel(height: int = 230) -> None:
     """Candlestick chart with a symbol picker (backed by the existing
     /market/chart/{symbol} endpoint). Placed directly under the BTC panel
     (see call site below) rather than as its own full-width section - BTC's

@@ -55,7 +55,7 @@ def inject_base_css() -> None:
         }
         [data-testid="stSidebarNav"] a[aria-current="page"] span { color: #2DD4BF !important; font-weight: 700; }
 
-        .block-container { padding-top: 0.9rem; padding-bottom: 1.4rem; max-width: 1280px; }
+        .block-container { padding-top: 0.5rem; padding-bottom: 0.6rem; max-width: 1280px; }
 
         /* Compresses the default gap Streamlit puts between top-level blocks
            (page header / market status bar / main two-column row / chart
@@ -63,11 +63,11 @@ def inject_base_css() -> None:
            specific rule below (scoped to stVerticalBlockBorderWrapper) never
            reaches them. Squeezes the whole dashboard vertically so more of
            it is visible without scrolling. */
-        [data-testid="stVerticalBlock"] { gap: 0.55rem; }
+        [data-testid="stVerticalBlock"] { gap: 0.4rem; }
 
         .ic-page-header {
-            display: flex; align-items: center; gap: 1rem;
-            padding: 0.8rem 1.4rem; margin-bottom: 0.2rem;
+            display: flex; align-items: center; gap: 0.85rem;
+            padding: 0.55rem 1.2rem; margin-bottom: 0.1rem;
             background: linear-gradient(135deg, #101827 0%, #0A0F1C 100%);
             border: 1px solid #1A2333; border-radius: 16px;
             box-shadow: 0 1px 0 0 rgba(255,255,255,0.03) inset;
@@ -97,14 +97,14 @@ def inject_base_css() -> None:
            precisely the metric-card rows, not the outer panel row that
            contains those bordered containers rather than living inside one. */
         [data-testid="stHorizontalBlock"] { align-items: flex-start; }
-        [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] { align-items: stretch; gap: 0.55rem; }
+        [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"] { align-items: stretch; gap: 0.4rem; }
         [data-testid="stHorizontalBlock"] > [data-testid="stColumn"] { display: flex; flex-direction: column; }
         [data-testid="stColumn"] > div { width: 100%; }
 
         .ic-metric-card {
             background: linear-gradient(165deg, #101827 0%, #0B1220 100%);
             border: 1px solid #1A2333; border-top: 3px solid var(--accent, #1A2333); border-radius: 14px;
-            padding: 0.7rem 0.85rem; min-height: 78px; height: 100%;
+            padding: 0.5rem 0.7rem; min-height: 62px; height: 100%;
             box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-start;
             box-shadow: 0 1px 0 0 rgba(255,255,255,0.03) inset;
         }
@@ -142,7 +142,7 @@ def inject_base_css() -> None:
 
         .ic-card {
             background: #0D1420; border: 1px solid #1A2333; border-radius: 14px;
-            padding: 0.7rem 1rem; margin-bottom: 0.5rem;
+            padding: 0.5rem 0.85rem; margin-bottom: 0.3rem;
             box-shadow: 0 1px 0 0 rgba(255,255,255,0.03) inset;
         }
 
@@ -160,10 +160,10 @@ def inject_base_css() -> None:
             background: linear-gradient(180deg, #0F1626 0%, #0A0F1C 100%) !important;
             border: 1px solid #1A2333 !important; border-radius: 16px !important;
         }
-        [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { gap: 0.5rem; }
+        [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] { gap: 0.35rem; }
         .ic-panel-title {
             font-size: 0.75rem; font-weight: 700; color: #5B6B84; text-transform: uppercase;
-            letter-spacing: 0.08em; margin: 0.7rem 0 0.45rem 0;
+            letter-spacing: 0.08em; margin: 0.5rem 0 0.35rem 0;
         }
         .ic-panel-title:first-child { margin-top: 0; }
 
@@ -174,8 +174,8 @@ def inject_base_css() -> None:
            actually reads as a heading rather than blending into the small-caps
            label styling used everywhere else. */
         .ic-panel-title-main {
-            font-size: 1.1rem; font-weight: 800; letter-spacing: -0.01em;
-            text-transform: none; margin: 0 0 0.55rem 0;
+            font-size: 1.05rem; font-weight: 800; letter-spacing: -0.01em;
+            text-transform: none; margin: 0 0 0.35rem 0;
         }
 
         .ic-divider { height: 1px; background: #1A2333; margin: 1.15rem 0; border: none; }
@@ -255,7 +255,7 @@ def panel_header(icon: str, title: str, accent: str = DEFAULT_ACCENT) -> str:
     (.ic-panel-title-main) rather than the small muted-grey uppercase style
     used for side-panel section labels."""
     return (
-        f'<div style="height:3px; width:100%; border-radius:3px; margin-bottom:0.85rem; '
+        f'<div style="height:3px; width:100%; border-radius:3px; margin-bottom:0.55rem; '
         f'background:linear-gradient(90deg, {accent} 0%, {accent}22 100%);"></div>'
         f'<div class="ic-panel-title-main" style="color:{accent};">{icon} {title}</div>'
     )
