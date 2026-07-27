@@ -62,7 +62,11 @@ def inject_base_css() -> None:
         }
         [data-testid="stSidebarNav"] a[aria-current="page"] span { color: #2DD4BF !important; font-weight: 700; }
 
-        .block-container { padding-top: 0.5rem; padding-bottom: 0.6rem; max-width: 1280px; }
+        .block-container {
+            padding: 0.9rem 1.1rem 1rem 1.1rem; max-width: 1280px;
+            border: 1px solid #1A2333; border-radius: 20px;
+            background: rgba(10, 15, 28, 0.35);
+        }
 
         /* Compresses the default gap Streamlit puts between top-level blocks
            (page header / market status bar / main two-column row / chart

@@ -12,7 +12,7 @@ import datetime as dt
 import plotly.graph_objects as go
 import streamlit as st
 
-from api_client import get, post
+from api_client import get, get_bytes, post
 from theme import (
     DEFAULT_ACCENT,
     EXCHANGE_ACCENT,
@@ -300,3 +300,50 @@ with side_col, st.container(border=True):
     # Market Status has its own full-width panel at the top of the dashboard
     # now (render_market_status_bar) - a second copy here would just repeat
     # the same NSE/CoinDCX open-closed state in smaller text for no reason.
+
+    st.markdown(section_title("Session Report", "#F472B6"), unsafe_allow_html=True)
+    if st.button("Generate PDF Report", width="stretch"):
+        with st.spinner("Building explainable trade-log PDF..."):
+            report = post("/reports/generate")
+            pdf_bytes = get_bytes(f"/reports/download/{report['filename']}")
+        if pdf_bytes:
+            st.session_state["report_bytes"] = pdf_bytes
+            st.session_state["report_filename"] = report["filename"]
+        else:
+            st.error("Report generated but couldn't be downloaded - try again.")
+    if st.session_state.get("report_bytes"):
+        st.download_button(
+            "⬇ Download Report",
+            data=st.session_state["report_bytes"],
+            file_name=st.session_state["report_filename"],
+            mime="application/pdf",
+            width="stretch",
+        )
+
+    st.markdown(section_title("Recent Activity", "#FBBF24"), unsafe_allow_html=True)
+    audit_events = get("/audit-log", limit=6, silent=True) or []
+    if audit_events:
+        _EVENT_ICON = {"committee_decision": "🧠", "session_closed": "🔒", "tick_error": "⚠️", "stop_loss_target_exit": "🎯"}
+        for e in audit_events:
+            icon = _EVENT_ICON.get(e["event_type"], "•")
+            sym = e["payload"].get("symbol", "")
+            verdict = e["payload"].get("verdict", "")
+            ts = e["timestamp"].split("T")[1][:5] if "T" in e["timestamp"] else e["timestamp"]
+            st.caption(f"{icon} {ts} · {e['event_type'].replace('_', ' ')} {sym} {verdict}".strip())
+    else:
+        st.caption("No activity logged yet.")
+
+# ================================================================== BOTTOM: portfolio growth curve (both exchanges)
+with st.container(border=True):
+    st.markdown(panel_header("📈", "Portfolio Growth", "#2DD4BF"), unsafe_allow_html=True)
+    g1, g2 = st.columns(2, gap="medium")
+    for gcol, exch, exch_label, exch_color in ((g1, "NSE", "NSE", "#6366F1"), (g2, "CRYPTO_INDIA", "BTC (CoinDCX)", "#F7931A")):
+        with gcol:
+            st.markdown(f"<div style='font-size:0.8rem; font-weight:700; color:{exch_color}; margin-bottom:0.3rem;'>{exch_label}</div>", unsafe_allow_html=True)
+            curve = get("/portfolio/equity-curve", exchange=exch, silent=True)
+            if curve and curve.get("figure"):
+                fig = go.Figure(curve["figure"])
+                fig.update_layout(height=200, margin={"t": 10, "b": 20, "l": 40, "r": 10}, font={"size": 10}, showlegend=False)
+                st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=f"equity_{exch}")
+            else:
+                st.caption("No trade history yet for this exchange's active session.")
