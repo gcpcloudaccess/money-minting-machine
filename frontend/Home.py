@@ -160,24 +160,12 @@ def render_exchange_panel(title: str, icon: str, exchange_code: str, symbols: li
                 """,
                 unsafe_allow_html=True,
             )
-            # Both notes are COMEX-derived, so they're merged into one caption
-            # rather than stacked as two near-identical-sounding lines - the
-            # "NSE closed, feed proxy" note only exists at all when NSE is
-            # shut and this symbol's ANALYSIS feed switched to COMEX; the
-            # "Global reference" price (India retail units - real MCX data
-            # isn't freely available, see market_data.py) is shown regardless
-            # of market hours, so it's always the second half of the line
-            # when present.
-            ref = item.get("global_reference") if item else None
-            closed_note = (
-                f"NSE closed — live COMEX {item.get('comex_symbol')} feed proxy for analysis (not tradable)"
-                if item and item.get("used_comex_proxy") and item.get("comex_price")
-                else None
-            )
-            ref_note = f"{ref['label']} ₹{ref['value_inr']:,.2f} {ref['unit']} (reference only, not 1:1 comparable)" if ref else None
-            if closed_note or ref_note:
-                st.caption(f"{label}: " + " · ".join(n for n in (closed_note, ref_note) if n) + ".")
-
+            # NOTE: the COMEX-proxy / global-reference caption that used to render
+            # here (per-symbol "NSE closed — live COMEX ... / Global gold (COMEX)
+            # ₹X per 10g...") was removed at the user's request - it was adding
+            # clutter under Gold/Silver without enough value to justify the space.
+            # The underlying data (item["used_comex_proxy"], item["global_reference"])
+            # is still returned by /watchlist if this ever needs to come back.
             pick = picks_by_symbol.get(symbol)
             if pick and pick.get("strategy"):
                 # Nifty/Bank Nifty: a real options structure (listed NSE index options).
@@ -191,6 +179,7 @@ def render_exchange_panel(title: str, icon: str, exchange_code: str, symbols: li
                 # so this is a plain directional positional call instead.
                 st.caption(f"{label} positional call: {pick['direction']} · {pick['directional_confidence']:.0f}% conviction")
 
+        st.markdown("<div style='height:0.9rem;'></div>", unsafe_allow_html=True)  # breathing room above the section title so it doesn't crowd the last row above it
         st.markdown(section_title("Open Positions", exchange_accent), unsafe_allow_html=True)
         if portfolio["positions"]:
             for p in portfolio["positions"]:
@@ -226,6 +215,36 @@ nse_symbols = [
 ]
 crypto_symbols = [("BTC", "BTCINR", _find(crypto_watchlist, "BTCINR"))]
 
+CHART_OPTIONS = [
+    ("Nifty 50", "^NSEI"),
+    ("Gold (GOLDBEES)", "GOLDBEES.NS"),
+    ("Silver (SILVERBEES)", "SILVERBEES.NS"),
+    ("BTC (CoinDCX)", "BTCINR"),
+]
+
+
+def render_price_chart_panel(height: int = 320) -> None:
+    """Candlestick chart with a symbol picker (backed by the existing
+    /market/chart/{symbol} endpoint). Placed directly under the BTC panel
+    (see call site below) rather than as its own full-width section - BTC's
+    panel is naturally much shorter than NSE's (1 symbol vs 3), which used to
+    leave a large empty gap in that column; the chart now fills it instead of
+    living in unused whitespace further down the page."""
+    with st.container(border=True):
+        st.markdown(panel_header("📉", "Price Chart", "#2DD4BF"), unsafe_allow_html=True)
+        chart_label = st.selectbox("Script", options=[label for label, _ in CHART_OPTIONS], label_visibility="collapsed")
+        chart_symbol = dict(CHART_OPTIONS)[chart_label]
+        chart_data = get(f"/market/chart/{chart_symbol}", silent=True)
+        if chart_data and chart_data.get("figure"):
+            fig = go.Figure(chart_data["figure"])
+            fig.update_layout(height=height, margin={"t": 40, "b": 30, "l": 45, "r": 15})
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            if chart_data.get("used_comex_proxy"):
+                st.caption(f"NSE closed — showing live COMEX {chart_data.get('source_symbol')} feed as an analysis proxy (not tradable).")
+        else:
+            st.caption("No bar data available for this symbol right now.")
+
+
 main_col, side_col = st.columns([3.2, 1], gap="medium")
 
 with main_col:
@@ -234,6 +253,7 @@ with main_col:
         render_exchange_panel("NSE — Index, Gold, Silver", "📈", "NSE", nse_symbols, nse_portfolio)
     with p2:
         render_exchange_panel("BTC (CoinDCX)", "₿", "CRYPTO_INDIA", crypto_symbols, crypto_portfolio)
+        render_price_chart_panel()
 
 # ================================================================== RIGHT: compact control panel
 with side_col, st.container(border=True):
@@ -270,7 +290,6 @@ with side_col, st.container(border=True):
             st.rerun()
 
     st.markdown(section_title("Positional Calls", "#C4B5FD"), unsafe_allow_html=True)
-    st.caption("Multi-day/week calls for Nifty 50, Bank Nifty (with options structures), Gold, Silver and BTC (directional only) — scan takes a few minutes, runs the full committee for each.")
     if st.button("Scan Positional Calls", width="stretch"):
         with st.spinner("Scanning Nifty 50, Bank Nifty, Gold, Silver and BTC..."):
             post("/positional/scan")
@@ -281,24 +300,3 @@ with side_col, st.container(border=True):
     # Market Status has its own full-width panel at the top of the dashboard
     # now (render_market_status_bar) - a second copy here would just repeat
     # the same NSE/CoinDCX open-closed state in smaller text for no reason.
-
-# ================================================================== BELOW: candlestick chart for a selected symbol
-CHART_OPTIONS = [
-    ("Nifty 50", "^NSEI"),
-    ("Gold (GOLDBEES)", "GOLDBEES.NS"),
-    ("Silver (SILVERBEES)", "SILVERBEES.NS"),
-    ("BTC (CoinDCX)", "BTCINR"),
-]
-with st.container(border=True):
-    st.markdown(panel_header("📉", "Price Chart", "#2DD4BF"), unsafe_allow_html=True)
-    chart_label = st.selectbox("Script", options=[label for label, _ in CHART_OPTIONS], label_visibility="collapsed")
-    chart_symbol = dict(CHART_OPTIONS)[chart_label]
-    chart_data = get(f"/market/chart/{chart_symbol}", silent=True)
-    if chart_data and chart_data.get("figure"):
-        fig = go.Figure(chart_data["figure"])
-        fig.update_layout(height=380, margin={"t": 40, "b": 30, "l": 45, "r": 15})
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        if chart_data.get("used_comex_proxy"):
-            st.caption(f"NSE closed — showing live COMEX {chart_data.get('source_symbol')} feed as an analysis proxy (not tradable).")
-    else:
-        st.caption("No bar data available for this symbol right now.")
